@@ -7,7 +7,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - /mnt/vault:/vault
+      - ${VAULT_HOST_PATH:-/mnt/vault}:/vault
     environment:
       - VAULT_PATH=/vault
       - PORT=3000
