@@ -1,0 +1,16 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build/temp artifacts
+*.zip
+serve-dashboard.sh
+ziEM1auW
+
+# Symlinks to local machine paths
+mnt/
+
+# Personal memory and context (contains private info)
+CLAUDE.md
+TASKS.md
+memory/
