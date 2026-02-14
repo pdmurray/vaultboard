@@ -1,6 +1,6 @@
-# Obsidian Vault Task Dashboard
+# Vaultboard
 
-A dashboard for [Obsidian](https://obsidian.md) daily notes that gives you a kanban board and chronological list view of your tasks. Works two ways: open `dashboard.html` directly in your browser, or self-host it as a Docker container for access from any device.
+A task dashboard for [Obsidian](https://obsidian.md) daily notes — kanban board and chronological list views. Open `dashboard.html` directly in your browser, or self-host as a Docker container for access from any device.
 
 ![Board and list views](https://img.shields.io/badge/views-board%20%7C%20list-D97757?style=flat-square) ![Self-hostable](https://img.shields.io/badge/self--host-Docker-blue?style=flat-square) ![Single file](https://img.shields.io/badge/local-single%20HTML-green?style=flat-square)
 
@@ -44,12 +44,19 @@ Two views are available:
 ## Quick Start (Docker)
 
 ```bash
-git clone https://github.com/pdmurray/obsidian-vault-dashboard.git
-cd obsidian-vault-dashboard
+git clone https://github.com/pdmurray/vaultboard.git
+cd vaultboard
 docker compose up -d
 ```
 
-The dashboard is now at `http://localhost:3000`. Edit the `volumes` path in `docker-compose.yml` to point to your vault directory on the host.
+The dashboard is now at `http://localhost:3000`. By default, compose pulls the pre-built image from `ghcr.io`. Edit the `volumes` path in `docker-compose.yml` to point to your vault directory on the host.
+
+To build locally instead of pulling:
+
+```bash
+docker compose build
+docker compose up -d
+```
 
 ### Keeping the vault in sync with Obsidian Sync
 
@@ -82,10 +89,10 @@ If you've set up the GitHub Actions workflow (included), the image is published 
 
 ```bash
 docker run -d \
-  --name obsidian-dashboard \
+  --name vaultboard \
   -p 3000:3000 \
   -v /path/to/your/vault:/vault \
-  ghcr.io/pdmurray/obsidian-vault-dashboard:latest
+  ghcr.io/pdmurray/vaultboard:latest
 ```
 
 ### Exposing via Cloudflare Tunnel
@@ -96,7 +103,7 @@ If you're already running Cloudflare tunnels, just add the dashboard as another 
 # In your cloudflared config
 ingress:
   - hostname: tasks.yourdomain.com
-    service: http://obsidian-dashboard:3000
+    service: http://vaultboard:3000
 ```
 
 > **Security note:** The REST API has no authentication. If you expose it beyond your local network, add authentication at the tunnel/reverse proxy layer (Cloudflare Access, basic auth in Caddy/nginx, etc.).

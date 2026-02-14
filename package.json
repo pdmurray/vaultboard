@@ -1,7 +1,7 @@
 {
-  "name": "obsidian-vault-dashboard",
+  "name": "vaultboard",
   "version": "1.0.0",
-  "description": "Self-hosted dashboard for Obsidian vault tasks",
+  "description": "Task dashboard for Obsidian daily notes — local or self-hosted",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
