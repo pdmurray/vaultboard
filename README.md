@@ -66,6 +66,12 @@ docker compose up -d
 
 The dashboard is now at `http://localhost:3000`. By default, compose pulls the pre-built image from `ghcr.io`. Edit the `volumes` path in `docker-compose.yml` to point to your vault directory on the host.
 
+Compose also starts [linuxserver/obsidian](https://github.com/linuxserver/docker-obsidian):
+
+- Dashboard: `http://localhost:3000`
+- Obsidian (HTTP): `http://localhost:3010`
+- Obsidian (HTTPS): `https://localhost:3011`
+
 To build locally instead of pulling:
 
 ```bash
@@ -75,28 +81,33 @@ docker compose up -d
 
 ### Keeping the vault in sync with Obsidian Sync
 
-The dashboard container needs access to your vault files on disk. If you use [Obsidian Sync](https://obsidian.md/sync), the cleanest approach is to run Obsidian on a machine that's always on — a VM or a desktop that doesn't sleep — and have it write to a shared filesystem that the Docker container can mount.
+The compose stack now runs both containers against the same vault mount:
 
-For example, on a TrueNAS server with a Windows or Linux VM:
+- `dashboard` mounts `${VAULT_HOST_PATH}` at `/vault`
+- `obsidian` mounts `${VAULT_HOST_PATH}` at `/vault`
 
-```
+That means you can run Obsidian directly in Docker (no VM required), open `/vault` as your vault folder in the Obsidian UI, and let Obsidian Sync handle cloud sync from there.
+
+```text
                     Obsidian Sync (cloud)
                   ↕            ↕            ↕
-Mac (Obsidian)   VM (Obsidian)   iPhone/iPad (Obsidian)
-                   ↓ writes to
-                 SMB/NFS share (NAS dataset)
-                   ↑ bind mount
-                 Dashboard container (:3000)
-                   ↑ browser
-                 Any device
+Mac (Obsidian)  Docker Obsidian   iPhone/iPad (Obsidian)
+                      ↓ writes to
+                  /vault (host path)
+                  ↑             ↑
+              dashboard      obsidian
+             container       container
 ```
 
-1. Create an SMB or NFS share on your NAS for the vault (e.g., `/mnt/pool/obsidian-vault`)
-2. Install Obsidian in a VM that runs 24/7, with its vault pointed at the share
-3. Enable Obsidian Sync in that VM — it stays current with all your other devices
-4. Bind-mount the same share into the dashboard container (the default in `docker-compose.yml`)
+Recommended first-run steps:
 
-Edits from the dashboard flow: server files → Obsidian detects change → Obsidian Sync → all your devices. Edits from any Obsidian device flow: Obsidian Sync → VM Obsidian → shared files → dashboard picks up on next poll (2 seconds).
+1. Set `VAULT_HOST_PATH` in your shell or `.env` to your real vault directory
+2. `docker compose up -d`
+3. Open Obsidian at `http://localhost:3010` (or `https://localhost:3011`)
+4. In Obsidian, choose **Open folder as vault** and select `/vault`
+5. Enable Obsidian Sync inside Obsidian if you use it
+
+Edits flow both ways through the shared filesystem: dashboard writes markdown files directly, Obsidian sees the changes, and Sync propagates them to your other devices.
 
 ### Using the pre-built image
 
@@ -174,13 +185,13 @@ Key conventions:
 │  Server (TrueNAS / Linux)                               │
 │                                                         │
 │  ┌────────────────────────┐   ┌───────────────────────┐ │
-│  │  dashboard container   │   │  VM (always-on)       │ │
+│  │  dashboard container   │   │  obsidian container   │ │
 │  │                        │   │                       │ │
 │  │  Express (server.js)   │   │  Obsidian ◄──── Sync  │ │
-│  │  ├─ dashboard.html     │   │       ↓               │ │
-│  │  └─ REST API /api/*    │   │  writes to vault      │ │
-│  │                        │   │                       │ │
-│  │  /vault (bind mount) ──┼───┼── /vault (SMB/NFS) ──│ │
+│  │  ├─ dashboard.html     │   │                       │ │
+│  │  └─ REST API /api/*    │   │  LinuxServer image    │ │
+│  │                        │   │  web UI (:3010/:3011) │ │
+│  │  /vault (bind mount) ──┼───┼── /vault (bind mount) │ │
 │  └────────────────────────┘   └───────────────────────┘ │
 │               ▲                                         │
 │          browser / phone                                │

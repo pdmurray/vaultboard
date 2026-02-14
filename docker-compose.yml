@@ -11,3 +11,20 @@ services:
     environment:
       - VAULT_PATH=/vault
       - PORT=3000
+
+  obsidian:
+    image: lscr.io/linuxserver/obsidian:latest
+    container_name: obsidian
+    restart: unless-stopped
+    ports:
+      - "${OBSIDIAN_HTTP_PORT:-3010}:3000"
+      - "${OBSIDIAN_HTTPS_PORT:-3011}:3001"
+    volumes:
+      - ${OBSIDIAN_CONFIG_HOST_PATH:-./.obsidian-config}:/config
+      - ${VAULT_HOST_PATH:-/mnt/vault}:/vault
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
+      - FILE_MANAGER_PATH=/vault
+    shm_size: "1gb"
