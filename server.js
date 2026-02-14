@@ -8,8 +8,9 @@ app.use(express.text({ type: '*/*', limit: '1mb' }));
 const VAULT_PATH = process.env.VAULT_PATH || '/vault';
 const PORT = process.env.PORT || 3000;
 
-// Serve static files (dashboard.html, etc.)
+// Serve static files — public/ for Docker, repo root as fallback for dev
 app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -145,6 +146,13 @@ app.put('/api/memory/file/*', (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Fallback: serve dashboard.html for root when no public/index.html exists (dev mode)
+app.get('/', (req, res, next) => {
+  const devFile = path.join(__dirname, 'dashboard.html');
+  if (fs.existsSync(devFile)) return res.sendFile(devFile);
+  next();
 });
 
 app.listen(PORT, '0.0.0.0', () => {

@@ -4,7 +4,8 @@
   "description": "Task dashboard for Obsidian daily notes — local or self-hosted",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "VAULT_PATH=${VAULT_PATH:-$HOME/obsidian-vault} node server.js"
   },
   "dependencies": {
     "express": "^4.21.0"

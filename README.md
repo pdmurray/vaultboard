@@ -41,6 +41,21 @@ Two views are available:
 
 > **Browser support:** Local mode requires the File System Access API — Chromium-based browsers only. Server mode works everywhere.
 
+## Development
+
+Run the server locally against your vault without Docker:
+
+```bash
+git clone https://github.com/pdmurray/vaultboard.git
+cd vaultboard
+npm install
+VAULT_PATH=/path/to/your/vault npm run dev
+```
+
+The dashboard is at `http://localhost:3000`. Changes to `dashboard.html` take effect on browser refresh — no build step. The server serves the file directly from the repo root.
+
+To change the port: `PORT=8080 VAULT_PATH=/path/to/vault npm run dev`
+
 ## Quick Start (Docker)
 
 ```bash

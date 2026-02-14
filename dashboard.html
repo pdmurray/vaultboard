@@ -1468,9 +1468,9 @@
       // Show/hide view toggle for tasks
       taskViewToggle.style.display = tab === 'tasks' ? 'flex' : 'none';
 
-      // Show/hide appropriate buttons
-      openTaskBtn.style.display = tab === 'tasks' ? 'inline-flex' : 'none';
-      openMemoryBtn.style.display = tab === 'memory' ? 'inline-flex' : 'none';
+      // Show/hide appropriate buttons (picker buttons always hidden in server mode)
+      openTaskBtn.style.display = (!IS_SERVED && tab === 'tasks') ? 'inline-flex' : 'none';
+      openMemoryBtn.style.display = (!IS_SERVED && tab === 'memory') ? 'inline-flex' : 'none';
       saveBtn.style.display = tab === 'tasks' ? 'inline-flex' : 'none';
 
       // Update file path display
@@ -1791,10 +1791,23 @@
           switchTaskView(currentView);
           startWatching();
 
+          // Hide the task empty state now that we're connected
+          const boardEmptyState = document.getElementById('boardEmptyState');
+          if (boardEmptyState) boardEmptyState.style.display = 'none';
+
           // Also auto-load memory in server mode
           await loadMemoryFromVaultIO();
           showStatus('Connected to vault');
         } catch (e) {
+          // Connection failed — show error in the empty state
+          const boardEmptyState = document.getElementById('boardEmptyState');
+          if (boardEmptyState) {
+            boardEmptyState.querySelector('#taskEmptyTitle').textContent = 'Could not connect to vault';
+            const hint = document.createElement('p');
+            hint.style.cssText = 'color: var(--text-secondary); font-size: 14px; margin-top: 8px;';
+            hint.textContent = e.message;
+            boardEmptyState.querySelector('#taskEmptyTitle').after(hint);
+          }
           showStatus('Server vault not available: ' + e.message);
         }
         return;
@@ -3008,11 +3021,37 @@
         }
       } catch (e) { console.log('No memory/ directory found'); }
 
-      renderMemory();
-      memoryEmptyState.style.display = 'none';
-      memoryMainContent.style.display = 'flex';
-      filePathEl.textContent = IS_SERVED ? 'vault (server)' : (VaultIO._memoryRootHandle?.name || '');
-      showStatus('Loaded memory');
+      const hasContent = memoryData.claudeMd || memoryData.memoryFiles.length > 0 || Object.keys(memoryData.memoryDirs).length > 0;
+
+      if (hasContent) {
+        renderMemory();
+        memoryEmptyState.style.display = 'none';
+        memoryMainContent.style.display = 'flex';
+        showStatus('Loaded memory');
+      } else {
+        // No memory files yet — show a helpful message
+        memoryEmptyState.style.display = '';
+        memoryMainContent.style.display = 'none';
+        const title = memoryEmptyState.querySelector('#memoryEmptyTitle');
+        if (IS_SERVED) {
+          title.textContent = 'No memory files found in vault';
+          // Hide picker buttons, show hint instead
+          memoryEmptyState.querySelector('#openMemoryBtnLarge').style.display = 'none';
+          const hint = document.createElement('p');
+          hint.style.cssText = 'color: var(--text-secondary); font-size: 14px; margin-top: 8px;';
+          hint.textContent = 'Add a CLAUDE.md or memory/ directory to your vault root to get started.';
+          if (!memoryEmptyState.querySelector('.memory-hint')) {
+            hint.className = 'memory-hint';
+            title.after(hint);
+          }
+        } else {
+          title.textContent = 'Select your project folder';
+        }
+        showStatus('No memory files found');
+      }
+      if (activeMainTab === 'memory') {
+        filePathEl.textContent = IS_SERVED ? 'vault (server)' : (VaultIO._memoryRootHandle?.name || '');
+      }
     }
 
     async function loadMemoryDirectory() {
@@ -3492,12 +3531,21 @@
     // Auto-restore previous file/folder handles on load
     tryRestoreHandles();
 
-    // In server mode, hide the vault/folder picker buttons (auto-connected)
+    // In server mode, hide all vault/folder picker UI — everything auto-connects
     if (IS_SERVED) {
       openTaskBtn.style.display = 'none';
       openMemoryBtn.style.display = 'none';
-      document.getElementById('openBtnLarge')?.closest('.empty-state')?.remove();
-      document.getElementById('openMemoryBtnLarge')?.closest('.empty-state')?.remove();
+      // Hide task empty state (vault picker) — show a loading message instead
+      const boardEmptyState = document.getElementById('boardEmptyState');
+      if (boardEmptyState) {
+        boardEmptyState.querySelector('#taskEmptyTitle').textContent = 'Connecting to vault…';
+        boardEmptyState.querySelector('#openBtnLarge').style.display = 'none';
+        boardEmptyState.querySelector('#reconnectTaskBtn').style.display = 'none';
+      }
+      // Hide memory empty state (folder picker)
+      memoryEmptyState.querySelector('#openMemoryBtnLarge').style.display = 'none';
+      memoryEmptyState.querySelector('#reconnectMemoryBtn').style.display = 'none';
+      memoryEmptyState.querySelector('#memoryEmptyTitle').textContent = 'Connecting to vault…';
     }
   </script>
 </body>
