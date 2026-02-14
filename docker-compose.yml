@@ -1,11 +1,10 @@
 services:
   dashboard:
     image: ghcr.io/pdmurray/vaultboard:latest
-    build: .
     container_name: vaultboard
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${DASHBOARD_PORT:-3000}:3000"
     volumes:
       - ${VAULT_HOST_PATH:-/mnt/vault}:/vault
     environment:

@@ -64,7 +64,7 @@ cd vaultboard
 docker compose up -d
 ```
 
-The dashboard is now at `http://localhost:3000`. By default, compose pulls the pre-built image from `ghcr.io`. Edit the `volumes` path in `docker-compose.yml` to point to your vault directory on the host.
+The dashboard is now at `http://localhost:${DASHBOARD_PORT:-3000}`. By default, compose pulls the pre-built image from `ghcr.io`. Edit the `volumes` path in `docker-compose.yml` to point to your vault directory on the host.
 
 Compose also starts [linuxserver/obsidian](https://github.com/linuxserver/docker-obsidian):
 
@@ -72,11 +72,13 @@ Compose also starts [linuxserver/obsidian](https://github.com/linuxserver/docker
 - Obsidian (HTTP): `http://localhost:3010`
 - Obsidian (HTTPS): `https://localhost:3011`
 
-To build locally instead of pulling:
+Set `DASHBOARD_PORT` (for example `8080`) if `3000` is already in use on your host.
+
+To build locally from source instead of pulling:
 
 ```bash
-docker compose build
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.build.yml build
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d
 ```
 
 ### Keeping the vault in sync with Obsidian Sync
