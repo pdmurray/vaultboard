@@ -1,0 +1,12 @@
+{
+  "name": "obsidian-vault-dashboard",
+  "version": "1.0.0",
+  "description": "Self-hosted dashboard for Obsidian vault tasks",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

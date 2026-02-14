@@ -1475,9 +1475,9 @@
 
       // Update file path display
       if (tab === 'tasks') {
-        filePathEl.textContent = vaultDirHandle ? vaultDirHandle.name : '';
+        filePathEl.textContent = VaultIO.connected ? (IS_SERVED ? 'vault (server) / daily' : (VaultIO._vaultHandle?.name || '') + ' / daily') : '';
       } else {
-        filePathEl.textContent = memoryDirHandle ? memoryDirHandle.name : '';
+        filePathEl.textContent = IS_SERVED ? 'vault (server)' : (VaultIO._memoryRootHandle?.name || '');
       }
     }
 
@@ -1485,12 +1485,266 @@
     memoryTabBtn.addEventListener('click', () => switchMainTab('memory'));
 
     // ============================================================
+    // ===== I/O ABSTRACTION LAYER =====
+    // Detects whether we're served from the backend (use REST API)
+    // or opened as a local file (use File System Access API).
+
+    const IS_SERVED = window.location.protocol !== 'file:';
+    const API_BASE = IS_SERVED ? '/api' : null;
+
+    // --- Vault I/O (used by both task and memory engines) ---
+    const VaultIO = IS_SERVED ? {
+      // ---- REST API backend mode ----
+      connected: false,
+
+      async connect() {
+        const res = await fetch(`${API_BASE}/health`);
+        const data = await res.json();
+        if (!data.ok) throw new Error('Vault not accessible on server');
+        this.connected = true;
+        return { name: 'vault (server)' };
+      },
+
+      async tryReconnect() {
+        try { await this.connect(); return true; }
+        catch { return false; }
+      },
+
+      async listDailyFiles() {
+        const res = await fetch(`${API_BASE}/daily`);
+        return await res.json(); // ['2026-02-14', ...]
+      },
+
+      async readDailyFile(dateStr) {
+        const res = await fetch(`${API_BASE}/daily/${dateStr}`);
+        if (!res.ok) return null;
+        return await res.json(); // { content, lastModified }
+      },
+
+      async writeDailyFile(dateStr, content) {
+        const res = await fetch(`${API_BASE}/daily/${dateStr}`, {
+          method: 'PUT', body: content, headers: { 'Content-Type': 'text/plain' }
+        });
+        const data = await res.json();
+        return data.lastModified;
+      },
+
+      async readClaudeMd() {
+        const res = await fetch(`${API_BASE}/memory/claude`);
+        if (!res.ok) return null;
+        return (await res.json()).content;
+      },
+
+      async writeClaudeMd(content) {
+        await fetch(`${API_BASE}/memory/claude`, {
+          method: 'PUT', body: content, headers: { 'Content-Type': 'text/plain' }
+        });
+      },
+
+      async listMemoryTree() {
+        const res = await fetch(`${API_BASE}/memory/files`);
+        return await res.json(); // { files: [...], dirs: { name: [...] } }
+      },
+
+      async readMemoryFile(relPath) {
+        const res = await fetch(`${API_BASE}/memory/file/${relPath}`);
+        if (!res.ok) return null;
+        return (await res.json()).content;
+      },
+
+      async writeMemoryFile(relPath, content) {
+        await fetch(`${API_BASE}/memory/file/${relPath}`, {
+          method: 'PUT', body: content, headers: { 'Content-Type': 'text/plain' }
+        });
+      }
+
+    } : {
+      // ---- Local File System Access API mode ----
+      connected: false,
+      _vaultHandle: null,
+      _dailyHandle: null,
+      _memoryRootHandle: null,
+      _fileHandles: {}, // dateStr -> FileSystemFileHandle
+      _memoryHandles: {}, // relPath -> { fileHandle, dirHandle? }
+
+      async connect() {
+        this._vaultHandle = await window.showDirectoryPicker();
+        this.connected = true;
+        await this._saveHandleToDB('vaultDirHandle', this._vaultHandle);
+        return { name: this._vaultHandle.name };
+      },
+
+      async tryReconnect() {
+        try {
+          const saved = await this._getHandleFromDB('vaultDirHandle');
+          if (!saved) return false;
+          if ((await saved.queryPermission({ mode: 'readwrite' })) === 'granted' ||
+              (await saved.requestPermission({ mode: 'readwrite' })) === 'granted') {
+            this._vaultHandle = saved;
+            this.connected = true;
+            return true;
+          }
+          return false;
+        } catch { return false; }
+      },
+
+      async listDailyFiles() {
+        this._dailyHandle = await this._vaultHandle.getDirectoryHandle('daily');
+        const dates = [];
+        for await (const entry of this._dailyHandle.values()) {
+          if (entry.kind === 'file' && /^\d{4}-\d{2}-\d{2}\.md$/.test(entry.name)) {
+            dates.push(entry.name.replace('.md', ''));
+            this._fileHandles[entry.name.replace('.md', '')] = entry;
+          }
+        }
+        return dates;
+      },
+
+      async readDailyFile(dateStr) {
+        const handle = this._fileHandles[dateStr];
+        if (!handle) return null;
+        const file = await handle.getFile();
+        return { content: await file.text(), lastModified: file.lastModified };
+      },
+
+      async writeDailyFile(dateStr, content) {
+        let handle = this._fileHandles[dateStr];
+        if (!handle) {
+          if (!this._dailyHandle) {
+            this._dailyHandle = await this._vaultHandle.getDirectoryHandle('daily', { create: true });
+          }
+          handle = await this._dailyHandle.getFileHandle(dateStr + '.md', { create: true });
+          this._fileHandles[dateStr] = handle;
+        }
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+        const file = await handle.getFile();
+        return file.lastModified;
+      },
+
+      async readClaudeMd() {
+        try {
+          if (!this._memoryRootHandle) return null;
+          const handle = await this._memoryRootHandle.getFileHandle('CLAUDE.md');
+          this._memoryHandles['CLAUDE.md'] = { fileHandle: handle };
+          const file = await handle.getFile();
+          return await file.text();
+        } catch { return null; }
+      },
+
+      async writeClaudeMd(content) {
+        const handle = this._memoryHandles['CLAUDE.md']?.fileHandle;
+        if (!handle) return;
+        const writable = await handle.createWritable();
+        await writable.write(content);
+        await writable.close();
+      },
+
+      async listMemoryTree() {
+        const result = { files: [], dirs: {} };
+        try {
+          if (!this._memoryRootHandle) return result;
+          const memoryDir = await this._memoryRootHandle.getDirectoryHandle('memory');
+          for await (const entry of memoryDir.values()) {
+            if (entry.isFile || entry.kind === 'file') {
+              if (entry.name.endsWith('.md')) result.files.push(entry.name);
+              this._memoryHandles['memory/' + entry.name] = { fileHandle: entry };
+            } else if (entry.isDirectory || entry.kind === 'directory') {
+              result.dirs[entry.name] = [];
+              for await (const sub of entry.values()) {
+                if ((sub.isFile || sub.kind === 'file') && sub.name.endsWith('.md')) {
+                  result.dirs[entry.name].push(sub.name);
+                  this._memoryHandles['memory/' + entry.name + '/' + sub.name] = {
+                    fileHandle: sub, dirHandle: entry
+                  };
+                }
+              }
+            }
+          }
+        } catch {}
+        return result;
+      },
+
+      async readMemoryFile(relPath) {
+        const handles = this._memoryHandles['memory/' + relPath];
+        if (!handles) return null;
+        const file = await handles.fileHandle.getFile();
+        return await file.text();
+      },
+
+      async writeMemoryFile(relPath, content) {
+        const handles = this._memoryHandles['memory/' + relPath];
+        if (!handles) {
+          // Create new file
+          const parts = relPath.split('/');
+          const memoryDir = await this._memoryRootHandle.getDirectoryHandle('memory');
+          let dirHandle = memoryDir;
+          if (parts.length > 1) {
+            dirHandle = await memoryDir.getDirectoryHandle(parts[0], { create: true });
+          }
+          const fileName = parts[parts.length - 1];
+          const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          this._memoryHandles['memory/' + relPath] = { fileHandle, dirHandle };
+          return;
+        }
+        const writable = await handles.fileHandle.createWritable();
+        await writable.write(content);
+        await writable.close();
+      },
+
+      async connectMemory() {
+        this._memoryRootHandle = await window.showDirectoryPicker();
+        await this._saveHandleToDB('memoryDirHandle', this._memoryRootHandle);
+        return { name: this._memoryRootHandle.name };
+      },
+
+      async tryReconnectMemory() {
+        try {
+          const saved = await this._getHandleFromDB('memoryDirHandle');
+          if (!saved) return false;
+          if ((await saved.queryPermission({ mode: 'readwrite' })) === 'granted' ||
+              (await saved.requestPermission({ mode: 'readwrite' })) === 'granted') {
+            this._memoryRootHandle = saved;
+            return true;
+          }
+          return false;
+        } catch { return false; }
+      },
+
+      // IndexedDB helpers for persisting handles
+      _dbPromise: null,
+      _openDB() {
+        if (this._dbPromise) return this._dbPromise;
+        this._dbPromise = new Promise((resolve, reject) => {
+          const req = indexedDB.open('productivityDashboard', 1);
+          req.onupgradeneeded = () => req.result.createObjectStore('handles');
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+        return this._dbPromise;
+      },
+      async _saveHandleToDB(key, handle) {
+        const db = await this._openDB();
+        const tx = db.transaction('handles', 'readwrite');
+        tx.objectStore('handles').put(handle, key);
+        return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+      },
+      async _getHandleFromDB(key) {
+        const db = await this._openDB();
+        const tx = db.transaction('handles', 'readonly');
+        const req = tx.objectStore('handles').get(key);
+        return new Promise((res, rej) => { req.onsuccess = () => res(req.result || null); req.onerror = () => rej(req.error); });
+      }
+    };
+
     // ===== TASKS FUNCTIONALITY =====
     // ============================================================
 
-    let vaultDirHandle = null;
-    let dailyDirHandle = null;
-    let dailyFiles = {}; // { 'YYYY-MM-DD': { handle, content, lastModified } }
+    let dailyFiles = {}; // { 'YYYY-MM-DD': { content, lastModified } }
 
     // Board view: kanban columns
     const KANBAN_COLUMNS = [
@@ -1526,52 +1780,30 @@
 
 ## Observations`;
 
-    // ---- IndexedDB persistence for file/folder handles ----
-    const DB_NAME = 'productivityDashboard';
-    const DB_VERSION = 1;
-    const STORE_NAME = 'handles';
-
-    function openDB() {
-      return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = () => req.result.createObjectStore(STORE_NAME);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-      });
-    }
-
-    async function saveHandle(key, handle) {
-      const db = await openDB();
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).put(handle, key);
-      return new Promise((resolve, reject) => {
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
-      });
-    }
-
-    async function getHandle(key) {
-      const db = await openDB();
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).get(key);
-      return new Promise((resolve, reject) => {
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => reject(req.error);
-      });
-    }
-
-    async function verifyPermission(handle, mode = 'readwrite') {
-      if ((await handle.queryPermission({ mode })) === 'granted') return true;
-      if ((await handle.requestPermission({ mode })) === 'granted') return true;
-      return false;
-    }
-
+    // ---- Connection / restore logic ----
     async function tryRestoreHandles() {
-      try {
-        const savedVaultHandle = await getHandle('vaultDirHandle');
-        const savedMemoryDirHandle = await getHandle('memoryDirHandle');
+      if (IS_SERVED) {
+        // Server mode: auto-connect to the backend API
+        try {
+          const info = await VaultIO.connect();
+          await loadVaultTasks();
+          filePathEl.textContent = info.name + ' / daily';
+          switchTaskView(currentView);
+          startWatching();
 
-        if (savedVaultHandle) {
+          // Also auto-load memory in server mode
+          await loadMemoryFromVaultIO();
+          showStatus('Connected to vault');
+        } catch (e) {
+          showStatus('Server vault not available: ' + e.message);
+        }
+        return;
+      }
+
+      // Local file mode: try to restore saved handles
+      try {
+        const canReconnectVault = await VaultIO.tryReconnect();
+        if (canReconnectVault) {
           const reconnectTaskBtn = document.getElementById('reconnectTaskBtn');
           const taskEmptyTitle = document.getElementById('taskEmptyTitle');
           reconnectTaskBtn.style.display = '';
@@ -1579,13 +1811,12 @@
 
           reconnectTaskBtn.addEventListener('click', async () => {
             try {
-              if (await verifyPermission(savedVaultHandle)) {
-                vaultDirHandle = savedVaultHandle;
+              if (await VaultIO.tryReconnect()) {
                 await loadVaultTasks();
-                filePathEl.textContent = vaultDirHandle.name + ' / daily';
+                filePathEl.textContent = VaultIO._vaultHandle.name + ' / daily';
                 switchTaskView(currentView);
                 startWatching();
-                showStatus('Reconnected to ' + vaultDirHandle.name);
+                showStatus('Reconnected to vault');
               }
             } catch (e) {
               showStatus('Could not reconnect: ' + e.message);
@@ -1593,7 +1824,8 @@
           });
         }
 
-        if (savedMemoryDirHandle) {
+        const canReconnectMemory = await VaultIO.tryReconnectMemory();
+        if (canReconnectMemory) {
           const reconnectMemoryBtn = document.getElementById('reconnectMemoryBtn');
           const memoryEmptyTitle = document.getElementById('memoryEmptyTitle');
           reconnectMemoryBtn.style.display = '';
@@ -1601,10 +1833,8 @@
 
           reconnectMemoryBtn.addEventListener('click', async () => {
             try {
-              if (await verifyPermission(savedMemoryDirHandle)) {
-                memoryDirHandle = savedMemoryDirHandle;
-                await loadMemoryFromHandle();
-                await saveHandle('memoryDirHandle', memoryDirHandle);
+              if (await VaultIO.tryReconnectMemory()) {
+                await loadMemoryFromVaultIO();
               }
             } catch (e) {
               showStatus('Could not reconnect: ' + e.message);
@@ -1813,35 +2043,27 @@
     // ---- Load all daily notes from vault ----
     async function loadVaultTasks() {
       try {
-        dailyDirHandle = await vaultDirHandle.getDirectoryHandle('daily');
+        const dates = await VaultIO.listDailyFiles();
+        dailyFiles = {};
+        allTasks = [];
+
+        for (const dateStr of dates) {
+          const fileData = await VaultIO.readDailyFile(dateStr);
+          if (!fileData) continue;
+
+          dailyFiles[dateStr] = {
+            content: fileData.content,
+            lastModified: fileData.lastModified
+          };
+
+          const tasks = parseDailyNote(fileData.content, dateStr);
+          allTasks.push(...tasks);
+        }
+
+        rebuildViews();
       } catch (e) {
-        showStatus('No daily/ folder found in vault');
-        return;
+        showStatus('Error loading vault: ' + e.message);
       }
-
-      dailyFiles = {};
-      allTasks = [];
-
-      const datePattern = /^\d{4}-\d{2}-\d{2}\.md$/;
-
-      for await (const entry of dailyDirHandle.values()) {
-        if (entry.kind !== 'file' || !datePattern.test(entry.name)) continue;
-
-        const dateStr = entry.name.replace('.md', '');
-        const file = await entry.getFile();
-        const content = await file.text();
-
-        dailyFiles[dateStr] = {
-          handle: entry,
-          content: content,
-          lastModified: file.lastModified
-        };
-
-        const tasks = parseDailyNote(content, dateStr);
-        allTasks.push(...tasks);
-      }
-
-      rebuildViews();
     }
 
     function rebuildViews() {
@@ -2227,7 +2449,7 @@
     }
 
     async function autoSave() {
-      if (!vaultDirHandle || !hasChanges || isSaving || dirtyDates.size === 0) return;
+      if (!VaultIO.connected || !hasChanges || isSaving || dirtyDates.size === 0) return;
       isSaving = true;
 
       try {
@@ -2235,23 +2457,9 @@
           const newContent = generateDailyNote(dateStr);
           if (!newContent) continue;
 
-          let fileHandle = dailyFiles[dateStr]?.handle;
-
-          if (!fileHandle) {
-            if (!dailyDirHandle) {
-              dailyDirHandle = await vaultDirHandle.getDirectoryHandle('daily', { create: true });
-            }
-            fileHandle = await dailyDirHandle.getFileHandle(dateStr + '.md', { create: true });
-            dailyFiles[dateStr].handle = fileHandle;
-          }
-
-          const writable = await fileHandle.createWritable();
-          await writable.write(newContent);
-          await writable.close();
-
-          const file = await fileHandle.getFile();
+          const newMtime = await VaultIO.writeDailyFile(dateStr, newContent);
           dailyFiles[dateStr].content = newContent;
-          dailyFiles[dateStr].lastModified = file.lastModified;
+          dailyFiles[dateStr].lastModified = newMtime;
         }
 
         dirtyDates.clear();
@@ -2265,35 +2473,35 @@
     }
 
     async function checkForExternalChanges() {
-      if (!vaultDirHandle || !dailyDirHandle || hasChanges || isSaving) return;
+      if (!VaultIO.connected || hasChanges || isSaving) return;
       try {
         let changed = false;
+
+        // Check existing files for modifications
         for (const [dateStr, fileData] of Object.entries(dailyFiles)) {
-          if (!fileData.handle) continue;
           try {
-            const file = await fileData.handle.getFile();
-            if (file.lastModified > fileData.lastModified) {
-              const content = await file.text();
-              fileData.content = content;
-              fileData.lastModified = file.lastModified;
+            const fresh = await VaultIO.readDailyFile(dateStr);
+            if (fresh && fresh.lastModified > fileData.lastModified) {
+              fileData.content = fresh.content;
+              fileData.lastModified = fresh.lastModified;
               changed = true;
             }
           } catch (e) { /* file may have been deleted */ }
         }
 
         // Check for new daily files
-        for await (const entry of dailyDirHandle.values()) {
-          if (entry.kind !== 'file' || !/^\d{4}-\d{2}-\d{2}\.md$/.test(entry.name)) continue;
-          const dateStr = entry.name.replace('.md', '');
+        const allDates = await VaultIO.listDailyFiles();
+        for (const dateStr of allDates) {
           if (!dailyFiles[dateStr]) {
-            const file = await entry.getFile();
-            dailyFiles[dateStr] = { handle: entry, content: await file.text(), lastModified: file.lastModified };
-            changed = true;
+            const fresh = await VaultIO.readDailyFile(dateStr);
+            if (fresh) {
+              dailyFiles[dateStr] = { content: fresh.content, lastModified: fresh.lastModified };
+              changed = true;
+            }
           }
         }
 
         if (changed) {
-          // Re-parse all tasks from cached content
           allTasks = [];
           for (const [dateStr, fileData] of Object.entries(dailyFiles)) {
             const tasks = parseDailyNote(fileData.content, dateStr);
@@ -2635,13 +2843,22 @@
     // ---- Vault folder picker ----
     async function openVaultFolder() {
       try {
-        vaultDirHandle = await window.showDirectoryPicker();
-        await loadVaultTasks();
-        switchTaskView(currentView);
-        startWatching();
-        filePathEl.textContent = vaultDirHandle.name + ' / daily';
+        if (IS_SERVED) {
+          // Server mode: just connect to the API
+          const info = await VaultIO.connect();
+          await loadVaultTasks();
+          switchTaskView(currentView);
+          startWatching();
+          filePathEl.textContent = info.name + ' / daily';
+        } else {
+          // Local mode: use directory picker
+          const info = await VaultIO.connect();
+          await loadVaultTasks();
+          switchTaskView(currentView);
+          startWatching();
+          filePathEl.textContent = info.name + ' / daily';
+        }
         showStatus('Loaded ' + Object.keys(dailyFiles).length + ' daily notes');
-        await saveHandle('vaultDirHandle', vaultDirHandle);
       } catch (e) {
         if (e.name !== 'AbortError') { showStatus('Error: ' + e.message); }
       }
@@ -2651,7 +2868,7 @@
     document.getElementById('openBtnLarge')?.addEventListener('click', openVaultFolder);
 
     saveBtn.addEventListener('click', async () => {
-      if (!vaultDirHandle) return;
+      if (!VaultIO.connected) return;
       await autoSave();
     });
 
@@ -2664,7 +2881,6 @@
     // ===== MEMORY FUNCTIONALITY =====
     // ============================================================
 
-    let memoryDirHandle = null;
     let memoryData = {
       claudeMd: null,
       memoryFiles: [],
@@ -2755,40 +2971,38 @@
         .join(' ');
     }
 
-    async function loadMemoryFromHandle() {
+    async function loadMemoryFromVaultIO() {
       memoryData = { claudeMd: null, memoryFiles: [], memoryDirs: {} };
 
       try {
-        const claudeFileHandle = await memoryDirHandle.getFileHandle('CLAUDE.md');
-        const file = await claudeFileHandle.getFile();
-        memoryData.claudeMd = { content: await file.text(), fileHandle: claudeFileHandle };
+        const claudeContent = await VaultIO.readClaudeMd();
+        if (claudeContent) {
+          memoryData.claudeMd = { content: claudeContent };
+        }
       } catch (e) { console.log('No CLAUDE.md found'); }
 
       try {
-        const memoryDir = await memoryDirHandle.getDirectoryHandle('memory');
-        for await (const entry of memoryDir.values()) {
-          if (entry.kind === 'file' && entry.name.endsWith('.md')) {
-            const file = await entry.getFile();
-            memoryData.memoryFiles.push({
-              name: entry.name,
-              content: await file.text(),
-              fileHandle: entry
-            });
-          } else if (entry.kind === 'directory') {
-            memoryData.memoryDirs[entry.name] = [];
-            const subDirHandle = entry;
-            for await (const subEntry of subDirHandle.values()) {
-              if (subEntry.kind === 'file' && subEntry.name.endsWith('.md')) {
-                const file = await subEntry.getFile();
-                const content = await file.text();
-                memoryData.memoryDirs[entry.name].push({
-                  name: subEntry.name,
-                  content: content,
-                  fileHandle: subEntry,
-                  dirHandle: subDirHandle,
-                  parsed: parseMemoryMarkdown(content)
-                });
-              }
+        const tree = await VaultIO.listMemoryTree();
+
+        for (const fileName of tree.files) {
+          const content = await VaultIO.readMemoryFile(fileName);
+          if (content) {
+            memoryData.memoryFiles.push({ name: fileName, content, relPath: fileName });
+          }
+        }
+
+        for (const [dirName, files] of Object.entries(tree.dirs)) {
+          memoryData.memoryDirs[dirName] = [];
+          for (const fileName of files) {
+            const relPath = dirName + '/' + fileName;
+            const content = await VaultIO.readMemoryFile(relPath);
+            if (content) {
+              memoryData.memoryDirs[dirName].push({
+                name: fileName,
+                content: content,
+                relPath: relPath,
+                parsed: parseMemoryMarkdown(content)
+              });
             }
           }
         }
@@ -2797,15 +3011,18 @@
       renderMemory();
       memoryEmptyState.style.display = 'none';
       memoryMainContent.style.display = 'flex';
-      filePathEl.textContent = memoryDirHandle.name;
-      showStatus('Loaded memory from ' + memoryDirHandle.name);
+      filePathEl.textContent = IS_SERVED ? 'vault (server)' : (VaultIO._memoryRootHandle?.name || '');
+      showStatus('Loaded memory');
     }
 
     async function loadMemoryDirectory() {
       try {
-        memoryDirHandle = await window.showDirectoryPicker();
-        await loadMemoryFromHandle();
-        await saveHandle('memoryDirHandle', memoryDirHandle);
+        if (IS_SERVED) {
+          await loadMemoryFromVaultIO();
+        } else {
+          await VaultIO.connectMemory();
+          await loadMemoryFromVaultIO();
+        }
       } catch (e) {
         if (e.name !== 'AbortError') { showStatus('Error: ' + e.message); }
       }
@@ -3200,9 +3417,7 @@
       try {
         if (type === 'claudeMd') {
           memoryData.claudeMd.content = content;
-          const writable = await memoryData.claudeMd.fileHandle.createWritable();
-          await writable.write(content);
-          await writable.close();
+          await VaultIO.writeClaudeMd(content);
           showStatus('Saved CLAUDE.md');
 
         } else if (type === 'memoryFile') {
@@ -3210,9 +3425,7 @@
           const file = memoryData.memoryFiles.find(f => f.name === fileName);
           if (file) {
             file.content = content;
-            const writable = await file.fileHandle.createWritable();
-            await writable.write(content);
-            await writable.close();
+            await VaultIO.writeMemoryFile(file.relPath || file.name, content);
             showStatus('Saved ' + fileName);
           }
 
@@ -3224,9 +3437,7 @@
           if (file) {
             file.content = content;
             file.parsed = parseMemoryMarkdown(content);
-            const writable = await file.fileHandle.createWritable();
-            await writable.write(content);
-            await writable.close();
+            await VaultIO.writeMemoryFile(file.relPath || (dirName + '/' + fileName), content);
             showStatus('Saved ' + fileName);
           }
 
@@ -3236,19 +3447,13 @@
           if (!fileName) { showStatus('Please enter a filename'); return; }
           if (!fileName.endsWith('.md')) fileName += '.md';
 
-          const memoryDir = await memoryDirHandle.getDirectoryHandle('memory');
-          const subDir = await memoryDir.getDirectoryHandle(dirName, { create: true });
-          const fileHandle = await subDir.getFileHandle(fileName, { create: true });
-
-          const writable = await fileHandle.createWritable();
-          await writable.write(content);
-          await writable.close();
+          const relPath = dirName + '/' + fileName;
+          await VaultIO.writeMemoryFile(relPath, content);
 
           memoryData.memoryDirs[dirName].push({
             name: fileName,
             content: content,
-            fileHandle: fileHandle,
-            dirHandle: subDir,
+            relPath: relPath,
             parsed: parseMemoryMarkdown(content)
           });
 
@@ -3286,6 +3491,14 @@
 
     // Auto-restore previous file/folder handles on load
     tryRestoreHandles();
+
+    // In server mode, hide the vault/folder picker buttons (auto-connected)
+    if (IS_SERVED) {
+      openTaskBtn.style.display = 'none';
+      openMemoryBtn.style.display = 'none';
+      document.getElementById('openBtnLarge')?.closest('.empty-state')?.remove();
+      document.getElementById('openMemoryBtnLarge')?.closest('.empty-state')?.remove();
+    }
   </script>
 </body>
 </html>

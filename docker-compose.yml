@@ -1,0 +1,12 @@
+services:
+  dashboard:
+    build: .
+    container_name: obsidian-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /mnt/vault:/vault
+    environment:
+      - VAULT_PATH=/vault
+      - PORT=3000

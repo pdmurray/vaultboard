@@ -2,6 +2,9 @@
 .DS_Store
 Thumbs.db
 
+# Node
+node_modules/
+
 # Build/temp artifacts
 *.zip
 serve-dashboard.sh
