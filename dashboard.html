@@ -1347,7 +1347,7 @@
     </div>
     <div class="buttons">
       <button id="openTaskBtn">Select Vault</button>
-      <button id="openMemoryBtn" style="display: none;">Open Folder</button>
+      <!-- Memory loads from vault automatically, no separate picker needed -->
       <button id="saveBtn" class="primary" disabled style="display: none;">Save</button>
       <button id="themeToggle" class="theme-toggle" title="Toggle dark mode">&#9790;</button>
     </div>
@@ -1368,9 +1368,8 @@
   <!-- MEMORY TAB PANEL -->
   <div class="tab-panel" id="memoryPanel">
     <div id="memoryEmptyState" class="empty-state">
-      <p style="margin-bottom: 24px; font-size: 18px; font-weight: 600; color: var(--text-primary);" id="memoryEmptyTitle">Select your project folder</p>
-      <button id="reconnectMemoryBtn" style="display:none; margin-bottom: 8px;">Reconnect Folder</button>
-      <button id="openMemoryBtnLarge">Select Folder</button>
+      <p style="margin-bottom: 24px; font-size: 18px; font-weight: 600; color: var(--text-primary);" id="memoryEmptyTitle">Select your vault to load memory</p>
+      <p style="color: var(--text-secondary); font-size: 14px;" class="memory-hint">Memory files are read from the <code>memory/</code> directory in your vault.</p>
     </div>
     <div id="memoryMainContent" style="display: none; flex-direction: column; min-height: 0; flex: 1;">
       <div class="memory-tabs" id="memoryTabsContainer"></div>
@@ -1453,7 +1452,7 @@
     const memoryPanel = document.getElementById('memoryPanel');
     const taskViewToggle = document.getElementById('taskViewToggle');
     const openTaskBtn = document.getElementById('openTaskBtn');
-    const openMemoryBtn = document.getElementById('openMemoryBtn');
+    // openMemoryBtn removed — memory loads from vault automatically
     const saveBtn = document.getElementById('saveBtn');
 
     function switchMainTab(tab) {
@@ -1470,14 +1469,14 @@
 
       // Show/hide appropriate buttons (picker buttons always hidden in server mode)
       openTaskBtn.style.display = (!IS_SERVED && tab === 'tasks') ? 'inline-flex' : 'none';
-      openMemoryBtn.style.display = (!IS_SERVED && tab === 'memory') ? 'inline-flex' : 'none';
+      // No memory picker button — memory comes from vault
       saveBtn.style.display = tab === 'tasks' ? 'inline-flex' : 'none';
 
       // Update file path display
       if (tab === 'tasks') {
         filePathEl.textContent = VaultIO.connected ? (IS_SERVED ? 'vault (server) / daily' : (VaultIO._vaultHandle?.name || '') + ' / daily') : '';
       } else {
-        filePathEl.textContent = IS_SERVED ? 'vault (server)' : (VaultIO._memoryRootHandle?.name || '');
+        filePathEl.textContent = IS_SERVED ? 'vault (server) / memory' : (VaultIO._vaultHandle?.name ? VaultIO._vaultHandle.name + ' / memory' : '');
       }
     }
 
@@ -1623,10 +1622,19 @@
         return file.lastModified;
       },
 
+      // Memory methods — read from vault/memory/ (same vault handle as tasks)
+      async _getMemoryDir(create = false) {
+        if (!this._vaultHandle) return null;
+        try {
+          return await this._vaultHandle.getDirectoryHandle('memory', { create });
+        } catch { return null; }
+      },
+
       async readClaudeMd() {
         try {
-          if (!this._memoryRootHandle) return null;
-          const handle = await this._memoryRootHandle.getFileHandle('CLAUDE.md');
+          const memoryDir = await this._getMemoryDir();
+          if (!memoryDir) return null;
+          const handle = await memoryDir.getFileHandle('CLAUDE.md');
           this._memoryHandles['CLAUDE.md'] = { fileHandle: handle };
           const file = await handle.getFile();
           return await file.text();
@@ -1634,8 +1642,13 @@
       },
 
       async writeClaudeMd(content) {
-        const handle = this._memoryHandles['CLAUDE.md']?.fileHandle;
-        if (!handle) return;
+        const memoryDir = await this._getMemoryDir(true);
+        if (!memoryDir) return;
+        let handle = this._memoryHandles['CLAUDE.md']?.fileHandle;
+        if (!handle) {
+          handle = await memoryDir.getFileHandle('CLAUDE.md', { create: true });
+          this._memoryHandles['CLAUDE.md'] = { fileHandle: handle };
+        }
         const writable = await handle.createWritable();
         await writable.write(content);
         await writable.close();
@@ -1644,18 +1657,20 @@
       async listMemoryTree() {
         const result = { files: [], dirs: {} };
         try {
-          if (!this._memoryRootHandle) return result;
-          const memoryDir = await this._memoryRootHandle.getDirectoryHandle('memory');
+          const memoryDir = await this._getMemoryDir();
+          if (!memoryDir) return result;
           for await (const entry of memoryDir.values()) {
-            if (entry.isFile || entry.kind === 'file') {
-              if (entry.name.endsWith('.md')) result.files.push(entry.name);
-              this._memoryHandles['memory/' + entry.name] = { fileHandle: entry };
-            } else if (entry.isDirectory || entry.kind === 'directory') {
+            if (entry.kind === 'file') {
+              if (entry.name.endsWith('.md') && entry.name !== 'CLAUDE.md') {
+                result.files.push(entry.name);
+              }
+              this._memoryHandles[entry.name] = { fileHandle: entry };
+            } else if (entry.kind === 'directory') {
               result.dirs[entry.name] = [];
               for await (const sub of entry.values()) {
-                if ((sub.isFile || sub.kind === 'file') && sub.name.endsWith('.md')) {
+                if (sub.kind === 'file' && sub.name.endsWith('.md')) {
                   result.dirs[entry.name].push(sub.name);
-                  this._memoryHandles['memory/' + entry.name + '/' + sub.name] = {
+                  this._memoryHandles[entry.name + '/' + sub.name] = {
                     fileHandle: sub, dirHandle: entry
                   };
                 }
@@ -1667,18 +1682,19 @@
       },
 
       async readMemoryFile(relPath) {
-        const handles = this._memoryHandles['memory/' + relPath];
+        const handles = this._memoryHandles[relPath];
         if (!handles) return null;
         const file = await handles.fileHandle.getFile();
         return await file.text();
       },
 
       async writeMemoryFile(relPath, content) {
-        const handles = this._memoryHandles['memory/' + relPath];
+        const handles = this._memoryHandles[relPath];
         if (!handles) {
           // Create new file
+          const memoryDir = await this._getMemoryDir(true);
+          if (!memoryDir) return;
           const parts = relPath.split('/');
-          const memoryDir = await this._memoryRootHandle.getDirectoryHandle('memory');
           let dirHandle = memoryDir;
           if (parts.length > 1) {
             dirHandle = await memoryDir.getDirectoryHandle(parts[0], { create: true });
@@ -1688,7 +1704,7 @@
           const writable = await fileHandle.createWritable();
           await writable.write(content);
           await writable.close();
-          this._memoryHandles['memory/' + relPath] = { fileHandle, dirHandle };
+          this._memoryHandles[relPath] = { fileHandle, dirHandle };
           return;
         }
         const writable = await handles.fileHandle.createWritable();
@@ -1696,23 +1712,15 @@
         await writable.close();
       },
 
+      // Memory auto-connects from vault — no separate picker needed
       async connectMemory() {
-        this._memoryRootHandle = await window.showDirectoryPicker();
-        await this._saveHandleToDB('memoryDirHandle', this._memoryRootHandle);
-        return { name: this._memoryRootHandle.name };
+        // No-op in local mode now — memory comes from the vault
+        return { name: this._vaultHandle?.name || '' };
       },
 
       async tryReconnectMemory() {
-        try {
-          const saved = await this._getHandleFromDB('memoryDirHandle');
-          if (!saved) return false;
-          if ((await saved.queryPermission({ mode: 'readwrite' })) === 'granted' ||
-              (await saved.requestPermission({ mode: 'readwrite' })) === 'granted') {
-            this._memoryRootHandle = saved;
-            return true;
-          }
-          return false;
-        } catch { return false; }
+        // Memory is available whenever vault is connected
+        return !!this._vaultHandle;
       },
 
       // IndexedDB helpers for persisting handles
@@ -1813,7 +1821,7 @@
         return;
       }
 
-      // Local file mode: try to restore saved handles
+      // Local file mode: try to restore saved vault handle
       try {
         const canReconnectVault = await VaultIO.tryReconnect();
         if (canReconnectVault) {
@@ -1829,25 +1837,9 @@
                 filePathEl.textContent = VaultIO._vaultHandle.name + ' / daily';
                 switchTaskView(currentView);
                 startWatching();
-                showStatus('Reconnected to vault');
-              }
-            } catch (e) {
-              showStatus('Could not reconnect: ' + e.message);
-            }
-          });
-        }
-
-        const canReconnectMemory = await VaultIO.tryReconnectMemory();
-        if (canReconnectMemory) {
-          const reconnectMemoryBtn = document.getElementById('reconnectMemoryBtn');
-          const memoryEmptyTitle = document.getElementById('memoryEmptyTitle');
-          reconnectMemoryBtn.style.display = '';
-          memoryEmptyTitle.textContent = 'Reconnect to your previous folder, or select a new one';
-
-          reconnectMemoryBtn.addEventListener('click', async () => {
-            try {
-              if (await VaultIO.tryReconnectMemory()) {
+                // Memory comes from the same vault — load it too
                 await loadMemoryFromVaultIO();
+                showStatus('Reconnected to vault');
               }
             } catch (e) {
               showStatus('Could not reconnect: ' + e.message);
@@ -2856,21 +2848,13 @@
     // ---- Vault folder picker ----
     async function openVaultFolder() {
       try {
-        if (IS_SERVED) {
-          // Server mode: just connect to the API
-          const info = await VaultIO.connect();
-          await loadVaultTasks();
-          switchTaskView(currentView);
-          startWatching();
-          filePathEl.textContent = info.name + ' / daily';
-        } else {
-          // Local mode: use directory picker
-          const info = await VaultIO.connect();
-          await loadVaultTasks();
-          switchTaskView(currentView);
-          startWatching();
-          filePathEl.textContent = info.name + ' / daily';
-        }
+        const info = await VaultIO.connect();
+        await loadVaultTasks();
+        switchTaskView(currentView);
+        startWatching();
+        filePathEl.textContent = info.name + ' / daily';
+        // Memory lives in the same vault — load it too
+        await loadMemoryFromVaultIO();
         showStatus('Loaded ' + Object.keys(dailyFiles).length + ' daily notes');
       } catch (e) {
         if (e.name !== 'AbortError') { showStatus('Error: ' + e.message); }
@@ -3033,37 +3017,17 @@
         memoryEmptyState.style.display = '';
         memoryMainContent.style.display = 'none';
         const title = memoryEmptyState.querySelector('#memoryEmptyTitle');
-        if (IS_SERVED) {
-          title.textContent = 'No memory files found in vault';
-          // Hide picker buttons, show hint instead
-          memoryEmptyState.querySelector('#openMemoryBtnLarge').style.display = 'none';
-          const hint = document.createElement('p');
-          hint.style.cssText = 'color: var(--text-secondary); font-size: 14px; margin-top: 8px;';
-          hint.textContent = 'Add a CLAUDE.md or memory/ directory to your vault root to get started.';
-          if (!memoryEmptyState.querySelector('.memory-hint')) {
-            hint.className = 'memory-hint';
-            title.after(hint);
-          }
-        } else {
-          title.textContent = 'Select your project folder';
+        title.textContent = VaultIO.connected
+          ? 'No memory files found in vault'
+          : 'Select your vault to load memory';
+        const hint = memoryEmptyState.querySelector('.memory-hint');
+        if (hint && VaultIO.connected) {
+          hint.textContent = 'Add a CLAUDE.md file to the memory/ directory in your vault to get started.';
         }
         showStatus('No memory files found');
       }
       if (activeMainTab === 'memory') {
-        filePathEl.textContent = IS_SERVED ? 'vault (server)' : (VaultIO._memoryRootHandle?.name || '');
-      }
-    }
-
-    async function loadMemoryDirectory() {
-      try {
-        if (IS_SERVED) {
-          await loadMemoryFromVaultIO();
-        } else {
-          await VaultIO.connectMemory();
-          await loadMemoryFromVaultIO();
-        }
-      } catch (e) {
-        if (e.name !== 'AbortError') { showStatus('Error: ' + e.message); }
+        filePathEl.textContent = IS_SERVED ? 'vault (server)' : (VaultIO._vaultHandle?.name ? VaultIO._vaultHandle.name + ' / memory' : '');
       }
     }
 
@@ -3508,8 +3472,7 @@
     }
 
     // Memory event listeners
-    openMemoryBtn.addEventListener('click', loadMemoryDirectory);
-    document.getElementById('openMemoryBtnLarge').addEventListener('click', loadMemoryDirectory);
+    // Memory picker removed — memory loads from vault automatically
     document.getElementById('modalClose').addEventListener('click', closeModal);
     document.getElementById('modalCancel').addEventListener('click', closeModal);
     document.getElementById('modalSave').addEventListener('click', saveModal);
@@ -3531,10 +3494,9 @@
     // Auto-restore previous file/folder handles on load
     tryRestoreHandles();
 
-    // In server mode, hide all vault/folder picker UI — everything auto-connects
+    // In server mode, hide vault picker UI — everything auto-connects
     if (IS_SERVED) {
       openTaskBtn.style.display = 'none';
-      openMemoryBtn.style.display = 'none';
       // Hide task empty state (vault picker) — show a loading message instead
       const boardEmptyState = document.getElementById('boardEmptyState');
       if (boardEmptyState) {
@@ -3542,9 +3504,7 @@
         boardEmptyState.querySelector('#openBtnLarge').style.display = 'none';
         boardEmptyState.querySelector('#reconnectTaskBtn').style.display = 'none';
       }
-      // Hide memory empty state (folder picker)
-      memoryEmptyState.querySelector('#openMemoryBtnLarge').style.display = 'none';
-      memoryEmptyState.querySelector('#reconnectMemoryBtn').style.display = 'none';
+      // Update memory empty state
       memoryEmptyState.querySelector('#memoryEmptyTitle').textContent = 'Connecting to vault…';
     }
   </script>

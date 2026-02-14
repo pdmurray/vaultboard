@@ -73,9 +73,9 @@ app.put('/api/daily/:date', (req, res) => {
 
 // ---- Memory API ----
 
-// Read CLAUDE.md
+// Read CLAUDE.md (lives inside memory/ directory)
 app.get('/api/memory/claude', (req, res) => {
-  const filePath = path.join(VAULT_PATH, 'CLAUDE.md');
+  const filePath = path.join(VAULT_PATH, 'memory', 'CLAUDE.md');
   try {
     const content = fs.readFileSync(filePath, 'utf-8');
     res.json({ content });
@@ -85,9 +85,9 @@ app.get('/api/memory/claude', (req, res) => {
   }
 });
 
-// Write CLAUDE.md
+// Write CLAUDE.md (lives inside memory/ directory)
 app.put('/api/memory/claude', (req, res) => {
-  const filePath = path.join(VAULT_PATH, 'CLAUDE.md');
+  const filePath = path.join(VAULT_PATH, 'memory', 'CLAUDE.md');
   try {
     fs.writeFileSync(filePath, req.body, 'utf-8');
     res.json({ ok: true });
