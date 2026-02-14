@@ -12,6 +12,7 @@ ziEM1auW
 
 # Symlinks to local machine paths
 mnt/
+.obsidian-config/
 
 # Personal memory and context (contains private info)
 CLAUDE.md
