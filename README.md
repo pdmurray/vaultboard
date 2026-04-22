@@ -73,6 +73,7 @@ Compose also starts [linuxserver/obsidian](https://github.com/linuxserver/docker
 - Obsidian (HTTPS): `https://localhost:3011`
 
 Set `DASHBOARD_PORT` (for example `8080`) if `3000` is already in use on your host.
+Set `VAULT_PATH` (for example `/vault/Main`) if your actual vault root is a subfolder inside the mounted path.
 
 To build locally from source instead of pulling:
 
@@ -104,10 +105,11 @@ Mac (Obsidian)  Docker Obsidian   iPhone/iPad (Obsidian)
 Recommended first-run steps:
 
 1. Set `VAULT_HOST_PATH` in your shell or `.env` to your real vault directory
-2. `docker compose up -d`
-3. Open Obsidian at `http://localhost:3010` (or `https://localhost:3011`)
-4. In Obsidian, choose **Open folder as vault** and select `/vault`
-5. Enable Obsidian Sync inside Obsidian if you use it
+2. If your synced vault is nested (for example `Main`), set `VAULT_PATH=/vault/Main`
+3. `docker compose up -d`
+4. Open Obsidian at `http://localhost:3010` (or `https://localhost:3011`)
+5. In Obsidian, choose **Open folder as vault** and select `/vault`
+6. Enable Obsidian Sync inside Obsidian if you use it
 
 Edits flow both ways through the shared filesystem: dashboard writes markdown files directly, Obsidian sees the changes, and Sync propagates them to your other devices.
 

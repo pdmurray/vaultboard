@@ -216,8 +216,8 @@
     .column {
       background: var(--bg-secondary);
       border-radius: 12px;
-      min-width: 340px;
-      max-width: 340px;
+      min-width: 300px;
+      flex: 1 1 0;
       display: flex;
       flex-direction: column;
       height: 100%;
@@ -292,10 +292,6 @@
     }
 
     .task-card .add-on-hover {
-      display: none;
-    }
-
-    .task-card:hover .add-on-hover {
       display: block;
     }
 
@@ -647,11 +643,6 @@
       cursor: pointer;
       padding: 3px 0;
       padding-left: 24px;
-      display: none;
-    }
-
-    .list-item:hover .list-item-add-subtask {
-      display: block;
     }
 
     .list-item-add-subtask:hover {
