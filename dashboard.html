@@ -1230,6 +1230,96 @@
       border-color: var(--accent);
     }
 
+    /* Journal styles */
+    .journal-compose {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .journal-compose textarea {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: inherit;
+      resize: vertical;
+      line-height: 1.6;
+      min-height: 80px;
+    }
+
+    .journal-compose textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .journal-compose-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 10px;
+    }
+
+    .journal-compose-date {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .journal-entries {
+      overflow-y: auto;
+      flex: 1;
+      padding: 16px 24px;
+    }
+
+    .journal-entry {
+      padding: 20px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      margin-bottom: 16px;
+      transition: border-color 0.15s;
+    }
+
+    .journal-entry:hover {
+      border-color: var(--border-light);
+    }
+
+    .journal-entry-date {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 10px;
+      letter-spacing: 0.02em;
+    }
+
+    .journal-entry-body {
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text-primary);
+      white-space: pre-wrap;
+    }
+
+    .journal-entry-observations {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      white-space: pre-wrap;
+    }
+
+    .journal-entry-observations-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
     /* Tab panel containers */
     .tab-panel {
       display: none;
@@ -1333,6 +1423,7 @@
       </div>
       <div class="view-toggle" id="mainTabToggle">
         <button id="tasksTabBtn" class="active">Tasks</button>
+        <button id="journalTabBtn">Journal</button>
         <button id="memoryTabBtn">Memory</button>
       </div>
       <div class="view-toggle" id="taskViewToggle">
@@ -1357,6 +1448,23 @@
         <button id="reconnectTaskBtn" style="display:none; margin-bottom: 8px;">Reconnect Vault</button>
         <button id="openBtnLarge">Select Vault</button>
       </div>
+    </div>
+  </div>
+
+  <!-- JOURNAL TAB PANEL -->
+  <div class="tab-panel" id="journalPanel">
+    <div id="journalEmptyState" class="empty-state">
+      <p style="margin-bottom: 24px; font-size: 18px; font-weight: 600; color: var(--text-primary);" id="journalEmptyTitle">Select your vault to load journal</p>
+    </div>
+    <div id="journalMainContent" style="display: none; flex-direction: column; min-height: 0; flex: 1;">
+      <div class="journal-compose">
+        <textarea id="journalNewEntry" placeholder="Write a journal entry for today..." rows="3"></textarea>
+        <div class="journal-compose-footer">
+          <span id="journalComposeDate" class="journal-compose-date"></span>
+          <button id="journalSaveBtn" class="primary">Save Entry</button>
+        </div>
+      </div>
+      <div class="journal-entries" id="journalEntries"></div>
     </div>
   </div>
 
@@ -1442,8 +1550,10 @@
 
     // ===== MAIN TAB SWITCHING =====
     const tasksTabBtn = document.getElementById('tasksTabBtn');
+    const journalTabBtn = document.getElementById('journalTabBtn');
     const memoryTabBtn = document.getElementById('memoryTabBtn');
     const tasksPanel = document.getElementById('tasksPanel');
+    const journalPanel = document.getElementById('journalPanel');
     const memoryPanel = document.getElementById('memoryPanel');
     const taskViewToggle = document.getElementById('taskViewToggle');
     const openTaskBtn = document.getElementById('openTaskBtn');
@@ -1454,9 +1564,11 @@
       activeMainTab = tab;
 
       tasksTabBtn.classList.toggle('active', tab === 'tasks');
+      journalTabBtn.classList.toggle('active', tab === 'journal');
       memoryTabBtn.classList.toggle('active', tab === 'memory');
 
       tasksPanel.classList.toggle('active', tab === 'tasks');
+      journalPanel.classList.toggle('active', tab === 'journal');
       memoryPanel.classList.toggle('active', tab === 'memory');
 
       // Show/hide view toggle for tasks
@@ -1470,12 +1582,20 @@
       // Update file path display
       if (tab === 'tasks') {
         filePathEl.textContent = VaultIO.connected ? (IS_SERVED ? 'vault (server) / daily' : (VaultIO._vaultHandle?.name || '') + ' / daily') : '';
+      } else if (tab === 'journal') {
+        filePathEl.textContent = VaultIO.connected ? (IS_SERVED ? 'vault (server) / daily' : (VaultIO._vaultHandle?.name || '') + ' / daily') : '';
       } else {
         filePathEl.textContent = IS_SERVED ? 'vault (server) / memory' : (VaultIO._vaultHandle?.name ? VaultIO._vaultHandle.name + ' / memory' : '');
+      }
+
+      // Render journal entries when switching to that tab
+      if (tab === 'journal' && VaultIO.connected) {
+        renderJournal();
       }
     }
 
     tasksTabBtn.addEventListener('click', () => switchMainTab('tasks'));
+    journalTabBtn.addEventListener('click', () => switchMainTab('journal'));
     memoryTabBtn.addEventListener('click', () => switchMainTab('memory'));
 
     // ============================================================
@@ -2876,6 +2996,151 @@
 
 
         // ============================================================
+    // ===== JOURNAL FUNCTIONALITY =====
+    // ============================================================
+
+    const journalEmptyState = document.getElementById('journalEmptyState');
+    const journalMainContent = document.getElementById('journalMainContent');
+    const journalEntries = document.getElementById('journalEntries');
+    const journalNewEntry = document.getElementById('journalNewEntry');
+    const journalSaveBtn = document.getElementById('journalSaveBtn');
+    const journalComposeDate = document.getElementById('journalComposeDate');
+
+    // Extract ## Journal and ## Observations sections from a daily note
+    function extractJournalFromContent(content) {
+      const journalMatch = content.match(/## Journal\n([\s\S]*?)(?=\n## |$)/);
+      const observationsMatch = content.match(/## Observations\n([\s\S]*?)(?=\n## |$)/);
+      const journal = journalMatch ? journalMatch[1].trim() : '';
+      const observations = observationsMatch ? observationsMatch[1].trim() : '';
+      return { journal, observations };
+    }
+
+    // Build sorted list of journal entries from loaded daily files
+    function getJournalEntries() {
+      const entries = [];
+      for (const [dateStr, fileData] of Object.entries(dailyFiles)) {
+        const { journal, observations } = extractJournalFromContent(fileData.content);
+        // Only include dates that have actual content
+        if (journal || observations) {
+          entries.push({ dateStr, journal, observations });
+        }
+      }
+      // Sort newest first
+      entries.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
+      return entries;
+    }
+
+    function formatDateDisplay(dateStr) {
+      const d = new Date(dateStr + 'T12:00:00'); // noon to avoid TZ issues
+      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      return d.toLocaleDateString('en-US', options);
+    }
+
+    function renderJournal() {
+      if (!VaultIO.connected) {
+        journalEmptyState.style.display = '';
+        journalMainContent.style.display = 'none';
+        return;
+      }
+
+      journalEmptyState.style.display = 'none';
+      journalMainContent.style.display = 'flex';
+
+      // Update compose date label
+      const today = getTodayStr();
+      journalComposeDate.textContent = formatDateDisplay(today);
+
+      // Pre-fill textarea if today already has a journal entry
+      const todayFile = dailyFiles[today];
+      if (todayFile) {
+        const { journal } = extractJournalFromContent(todayFile.content);
+        journalNewEntry.value = journal;
+      } else {
+        journalNewEntry.value = '';
+      }
+
+      const entries = getJournalEntries();
+      // Don't show today in the log since it's in the compose area
+      const pastEntries = entries.filter(e => e.dateStr !== today);
+
+      if (pastEntries.length === 0 && !journalNewEntry.value) {
+        journalEntries.innerHTML = '<div class="empty-state"><p style="color: var(--text-muted); font-size: 15px;">No journal entries yet. Write something above to get started.</p></div>';
+        return;
+      }
+
+      let html = '';
+      for (const entry of pastEntries) {
+        html += `<div class="journal-entry">`;
+        html += `<div class="journal-entry-date">${formatDateDisplay(entry.dateStr)}</div>`;
+        if (entry.journal) {
+          html += `<div class="journal-entry-body">${escapeHtml(entry.journal)}</div>`;
+        }
+        if (entry.observations) {
+          html += `<div class="journal-entry-observations">`;
+          html += `<div class="journal-entry-observations-label">Observations</div>`;
+          html += `${escapeHtml(entry.observations)}`;
+          html += `</div>`;
+        }
+        html += `</div>`;
+      }
+      journalEntries.innerHTML = html;
+    }
+
+    // Save journal entry — writes to today's daily note
+    journalSaveBtn.addEventListener('click', async () => {
+      if (!VaultIO.connected) return;
+
+      const today = getTodayStr();
+      const newJournal = journalNewEntry.value.trim();
+
+      // Ensure the daily file exists
+      if (!dailyFiles[today]) {
+        // Create a new daily note with the template
+        const template = `# Daily Notes\n\n- Personal\n\t- [ ] \n- Work\n\t- [ ] \n\n## Journal\n\n${newJournal}\n\n## Observations\n`;
+        await VaultIO.writeDailyFile(today, template);
+        dailyFiles[today] = { content: template, lastModified: Date.now() };
+      } else {
+        // Update the existing daily note's journal section
+        const content = dailyFiles[today].content;
+        const lines = content.split('\n');
+        let journalStart = -1;
+        let journalEnd = -1;
+
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].match(/^## Journal\s*$/)) {
+            journalStart = i + 1;
+          } else if (journalStart >= 0 && journalEnd === -1 && lines[i].match(/^## /)) {
+            journalEnd = i;
+          }
+        }
+
+        if (journalStart === -1) {
+          // No journal section exists — append one before ## Observations or at end
+          let insertAt = lines.length;
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].match(/^## Observations\s*$/)) { insertAt = i; break; }
+          }
+          lines.splice(insertAt, 0, '## Journal', '', newJournal, '');
+        } else {
+          // Replace content between ## Journal and next ##
+          if (journalEnd === -1) journalEnd = lines.length;
+          const before = lines.slice(0, journalStart);
+          const after = lines.slice(journalEnd);
+          lines.length = 0;
+          lines.push(...before, '', newJournal, '', ...after);
+        }
+
+        const newContent = lines.join('\n');
+        const mtime = await VaultIO.writeDailyFile(today, newContent);
+        dailyFiles[today].content = newContent;
+        dailyFiles[today].lastModified = mtime || Date.now();
+      }
+
+      showStatus('Journal entry saved');
+      renderJournal();
+    });
+
+    // ============================================================
     // ===== MEMORY FUNCTIONALITY =====
     // ============================================================
 
@@ -3505,8 +3770,9 @@
         boardEmptyState.querySelector('#openBtnLarge').style.display = 'none';
         boardEmptyState.querySelector('#reconnectTaskBtn').style.display = 'none';
       }
-      // Update memory empty state
+      // Update memory and journal empty states
       memoryEmptyState.querySelector('#memoryEmptyTitle').textContent = 'Connecting to vault…';
+      journalEmptyState.querySelector('#journalEmptyTitle').textContent = 'Connecting to vault…';
     }
   </script>
 </body>
