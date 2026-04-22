@@ -295,6 +295,10 @@
       display: block;
     }
 
+    .task-card [data-action="add-subtask"]:hover {
+      color: var(--accent) !important;
+    }
+
     .task-card .delete-btn {
       display: none;
       position: absolute;
@@ -2391,7 +2395,13 @@
         } else if (e.key === 'Escape') { wrapper.remove(); }
       });
 
-      input.addEventListener('blur', () => { setTimeout(() => wrapper.remove(), 150); });
+      input.addEventListener('blur', (e) => {
+        // Don't remove if user clicked the category toggle button
+        if (e.relatedTarget === catBtn) return;
+        setTimeout(() => wrapper.remove(), 150);
+      });
+      // Re-focus the input after toggling category so it doesn't dismiss
+      catBtn.addEventListener('mousedown', (e) => e.preventDefault());
     }
 
     function ensureDailyFile(dateStr) {
