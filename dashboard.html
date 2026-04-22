@@ -1291,6 +1291,7 @@
       border-radius: 10px;
       margin-bottom: 16px;
       transition: border-color 0.15s;
+      overflow: hidden;
     }
 
     .journal-entry:hover {
@@ -1309,7 +1310,8 @@
       font-size: 15px;
       line-height: 1.7;
       color: var(--text-primary);
-      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
 
     .journal-entry-observations {
@@ -1319,7 +1321,8 @@
       font-size: 14px;
       line-height: 1.6;
       color: var(--text-secondary);
-      white-space: pre-wrap;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
 
     .journal-entry-observations-label {
@@ -1356,7 +1359,11 @@
     }
 
     .journal-entry-body li {
-      margin-bottom: 4px;
+      margin-bottom: 2px;
+    }
+
+    .journal-entry-body li p {
+      margin-bottom: 0;
     }
 
     .journal-entry-body code {
@@ -1375,6 +1382,7 @@
       margin: 10px 0;
       font-size: 13px;
       line-height: 1.5;
+      max-width: 100%;
     }
 
     .journal-entry-body pre code {
