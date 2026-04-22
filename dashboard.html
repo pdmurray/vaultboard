@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -823,6 +824,10 @@
       padding: 4px;
       border-radius: 8px;
       flex-shrink: 0;
+      max-width: 960px;
+      margin-left: auto;
+      margin-right: auto;
+      width: 100%;
     }
 
     .memory-tab {
@@ -1234,6 +1239,9 @@
     .journal-compose {
       padding: 20px 24px;
       border-bottom: 1px solid var(--border);
+      max-width: 860px;
+      width: 100%;
+      margin: 0 auto;
     }
 
     .journal-compose textarea {
@@ -1271,6 +1279,9 @@
       overflow-y: auto;
       flex: 1;
       padding: 16px 24px;
+      max-width: 860px;
+      width: 100%;
+      margin: 0 auto;
     }
 
     .journal-entry {
@@ -1320,6 +1331,83 @@
       margin-bottom: 6px;
     }
 
+    /* Markdown prose styles for journal entries */
+    .journal-entry-body h1,
+    .journal-entry-body h2,
+    .journal-entry-body h3,
+    .journal-entry-body h4 {
+      color: var(--text-primary);
+      margin: 12px 0 6px 0;
+    }
+    .journal-entry-body h3 { font-size: 16px; }
+    .journal-entry-body h4 { font-size: 14px; }
+
+    .journal-entry-body p {
+      margin-bottom: 10px;
+    }
+    .journal-entry-body p:last-child {
+      margin-bottom: 0;
+    }
+
+    .journal-entry-body ul,
+    .journal-entry-body ol {
+      margin: 8px 0;
+      padding-left: 24px;
+    }
+
+    .journal-entry-body li {
+      margin-bottom: 4px;
+    }
+
+    .journal-entry-body code {
+      background: var(--bg-secondary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .journal-entry-body pre {
+      background: var(--bg-secondary);
+      padding: 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 10px 0;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .journal-entry-body pre code {
+      background: none;
+      padding: 0;
+    }
+
+    .journal-entry-body blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 14px;
+      margin: 10px 0;
+      color: var(--text-secondary);
+    }
+
+    .journal-entry-body a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .journal-entry-body a:hover {
+      text-decoration: underline;
+    }
+
+    .journal-entry-body hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 16px 0;
+    }
+
+    .journal-entry-observations .journal-entry-body {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
     /* Tab panel containers */
     .tab-panel {
       display: none;
@@ -1337,6 +1425,9 @@
       flex: 1;
       overflow-y: auto;
       min-height: 0;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
     }
 
     .memory-content-area::-webkit-scrollbar {
@@ -3006,6 +3097,14 @@
     const journalSaveBtn = document.getElementById('journalSaveBtn');
     const journalComposeDate = document.getElementById('journalComposeDate');
 
+    // Render markdown to HTML (uses marked.js if available, falls back to plain text)
+    function renderMarkdown(text) {
+      if (typeof marked !== 'undefined') {
+        return marked.parse(text, { breaks: true });
+      }
+      return '<p>' + escapeHtml(text) + '</p>';
+    }
+
     // Extract ## Journal and ## Observations sections from a daily note
     function extractJournalFromContent(content) {
       const journalMatch = content.match(/## Journal\n([\s\S]*?)(?=\n## |$)/);
@@ -3073,12 +3172,12 @@
         html += `<div class="journal-entry">`;
         html += `<div class="journal-entry-date">${formatDateDisplay(entry.dateStr)}</div>`;
         if (entry.journal) {
-          html += `<div class="journal-entry-body">${escapeHtml(entry.journal)}</div>`;
+          html += `<div class="journal-entry-body">${renderMarkdown(entry.journal)}</div>`;
         }
         if (entry.observations) {
           html += `<div class="journal-entry-observations">`;
           html += `<div class="journal-entry-observations-label">Observations</div>`;
-          html += `${escapeHtml(entry.observations)}`;
+          html += `<div class="journal-entry-body">${renderMarkdown(entry.observations)}</div>`;
           html += `</div>`;
         }
         html += `</div>`;
