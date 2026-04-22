@@ -3157,26 +3157,31 @@
       const today = getTodayStr();
       journalComposeDate.textContent = formatDateDisplay(today);
 
-      // Pre-fill textarea if today already has a journal entry
       const todayFile = dailyFiles[today];
-      if (todayFile) {
-        const { journal } = extractJournalFromContent(todayFile.content);
-        journalNewEntry.value = journal;
+      const todayJournal = todayFile ? extractJournalFromContent(todayFile.content).journal : '';
+
+      // After save, _journalJustSaved is true — show today in the list, leave textarea clear.
+      // On normal load, pre-fill today's journal into the textarea for editing.
+      if (renderJournal._justSaved) {
+        renderJournal._justSaved = false;
+        journalNewEntry.value = '';
+      } else if (todayJournal) {
+        journalNewEntry.value = todayJournal;
       } else {
         journalNewEntry.value = '';
       }
 
       const entries = getJournalEntries();
-      // Don't show today in the log since it's in the compose area
-      const pastEntries = entries.filter(e => e.dateStr !== today);
+      const textareaHasToday = journalNewEntry.value.trim() === todayJournal.trim() && todayJournal;
+      const displayEntries = textareaHasToday ? entries.filter(e => e.dateStr !== today) : entries;
 
-      if (pastEntries.length === 0 && !journalNewEntry.value) {
+      if (displayEntries.length === 0 && !journalNewEntry.value) {
         journalEntries.innerHTML = '<div class="empty-state"><p style="color: var(--text-muted); font-size: 15px;">No journal entries yet. Write something above to get started.</p></div>';
         return;
       }
 
       let html = '';
-      for (const entry of pastEntries) {
+      for (const entry of displayEntries) {
         html += `<div class="journal-entry">`;
         html += `<div class="journal-entry-date">${formatDateDisplay(entry.dateStr)}</div>`;
         if (entry.journal) {
@@ -3244,6 +3249,10 @@
       }
 
       showStatus('Journal entry saved');
+
+      // Flag that we just saved, then re-render — this clears the textarea
+      // and shows today's entry in the list below as confirmation
+      renderJournal._justSaved = true;
       renderJournal();
     });
 
