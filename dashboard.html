@@ -1298,12 +1298,126 @@
       border-color: var(--border-light);
     }
 
+    .journal-entry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+
     .journal-entry-date {
       font-size: 13px;
       font-weight: 600;
       color: var(--accent);
-      margin-bottom: 10px;
       letter-spacing: 0.02em;
+    }
+
+    .journal-entry-time {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .journal-entry-actions {
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .journal-entry:hover .journal-entry-actions {
+      opacity: 1;
+    }
+
+    .journal-entry-action-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    .journal-entry-action-btn:hover {
+      color: var(--accent);
+      background: var(--bg-secondary);
+    }
+
+    .journal-entry-edit-area {
+      width: 100%;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+      color: var(--text-primary);
+      font-size: 15px;
+      font-family: inherit;
+      resize: vertical;
+      line-height: 1.6;
+      min-height: 80px;
+    }
+
+    .journal-entry-edit-area:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .journal-entry-edit-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .journal-entry-edit-footer button {
+      padding: 5px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .journal-entry-edit-footer button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .journal-entry-edit-footer button.primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .journal-sub-entry {
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border-light);
+      position: relative;
+    }
+
+    .journal-sub-entry:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .journal-sub-entry:first-child {
+      padding-top: 0;
+    }
+
+    .journal-entry-actions.legacy-actions {
+      position: absolute;
+      top: 12px;
+      right: 0;
+    }
+
+    .journal-sub-entry:first-child > .legacy-actions {
+      top: 0;
+    }
+
+    .journal-sub-entry:hover .legacy-actions {
+      opacity: 1;
     }
 
     .journal-entry-body {
@@ -3113,8 +3227,13 @@
       return '<p>' + escapeHtml(text) + '</p>';
     }
 
-    // Extract ## Journal and ## Observations sections from a daily note
-    function extractJournalFromContent(content) {
+    // Format current time as "10:32 AM"
+    function formatTimeNow() {
+      return new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    }
+
+    // Extract raw ## Journal and ## Observations sections from a daily note
+    function extractSectionsFromContent(content) {
       const journalMatch = content.match(/## Journal\n([\s\S]*?)(?=\n## |$)/);
       const observationsMatch = content.match(/## Observations\n([\s\S]*?)(?=\n## |$)/);
       const journal = journalMatch ? journalMatch[1].trim() : '';
@@ -3122,27 +3241,99 @@
       return { journal, observations };
     }
 
-    // Build sorted list of journal entries from loaded daily files
-    function getJournalEntries() {
-      const entries = [];
+    // Parse a journal section into individual timestamped entries.
+    // Format: **10:32 AM** — text...\n\n**2:15 PM** — more text...
+    // Backward compat: if no timestamps found, treat entire block as a single legacy entry.
+    const TIMESTAMP_RE = /^\*\*(\d{1,2}:\d{2}\s*[AP]M)\*\*\s*[—–-]\s*/im;
+    const TIMESTAMP_SPLIT_RE = /(?=^\*\*\d{1,2}:\d{2}\s*[AP]M\*\*\s*[—–-]\s*)/im;
+
+    function parseJournalEntries(journalText) {
+      if (!journalText) return [];
+
+      // Check if the text has any timestamps
+      if (!TIMESTAMP_RE.test(journalText)) {
+        // Legacy format — single block, no timestamps
+        return [{ time: null, text: journalText, legacy: true }];
+      }
+
+      // Split on timestamp boundaries
+      const blocks = journalText.split(TIMESTAMP_SPLIT_RE).filter(b => b.trim());
+      return blocks.map(block => {
+        const match = block.match(TIMESTAMP_RE);
+        if (match) {
+          const time = match[1].trim();
+          const text = block.slice(match[0].length).trim();
+          return { time, text, legacy: false };
+        }
+        // Shouldn't happen, but treat as legacy
+        return { time: null, text: block.trim(), legacy: true };
+      });
+    }
+
+    // Rebuild the journal section text from parsed entries
+    function serializeJournalEntries(entries) {
+      return entries.map(e => {
+        if (e.legacy || !e.time) return e.text;
+        return `**${e.time}** — ${e.text}`;
+      }).join('\n\n');
+    }
+
+    // Build sorted list of daily journal data from loaded daily files
+    function getJournalDays() {
+      const days = [];
       for (const [dateStr, fileData] of Object.entries(dailyFiles)) {
-        const { journal, observations } = extractJournalFromContent(fileData.content);
-        // Only include dates that have actual content
+        const { journal, observations } = extractSectionsFromContent(fileData.content);
         if (journal || observations) {
-          entries.push({ dateStr, journal, observations });
+          const entries = parseJournalEntries(journal);
+          days.push({ dateStr, entries, observations });
         }
       }
-      // Sort newest first
-      entries.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
-      return entries;
+      days.sort((a, b) => b.dateStr.localeCompare(a.dateStr));
+      return days;
     }
 
     function formatDateDisplay(dateStr) {
-      const d = new Date(dateStr + 'T12:00:00'); // noon to avoid TZ issues
+      const d = new Date(dateStr + 'T12:00:00');
       const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
       return d.toLocaleDateString('en-US', options);
     }
 
+    // Write the journal section back to a daily file
+    async function writeJournalSection(dateStr, newJournalText) {
+      const content = dailyFiles[dateStr].content;
+      const lines = content.split('\n');
+      let journalStart = -1;
+      let journalEnd = -1;
+
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].match(/^## Journal\s*$/)) {
+          journalStart = i + 1;
+        } else if (journalStart >= 0 && journalEnd === -1 && lines[i].match(/^## /)) {
+          journalEnd = i;
+        }
+      }
+
+      if (journalStart === -1) {
+        let insertAt = lines.length;
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].match(/^## Observations\s*$/)) { insertAt = i; break; }
+        }
+        lines.splice(insertAt, 0, '## Journal', '', newJournalText, '');
+      } else {
+        if (journalEnd === -1) journalEnd = lines.length;
+        const before = lines.slice(0, journalStart);
+        const after = lines.slice(journalEnd);
+        lines.length = 0;
+        lines.push(...before, '', newJournalText, '', ...after);
+      }
+
+      const newContent = lines.join('\n');
+      const mtime = await VaultIO.writeDailyFile(dateStr, newContent);
+      dailyFiles[dateStr].content = newContent;
+      dailyFiles[dateStr].lastModified = mtime || Date.now();
+    }
+
+    // Render the journal tab
     function renderJournal() {
       if (!VaultIO.connected) {
         journalEmptyState.style.display = '';
@@ -3153,106 +3344,151 @@
       journalEmptyState.style.display = 'none';
       journalMainContent.style.display = 'flex';
 
-      // Update compose date label
+      // Compose area: always empty, always for new entries
       const today = getTodayStr();
       journalComposeDate.textContent = formatDateDisplay(today);
+      journalNewEntry.value = '';
 
-      const todayFile = dailyFiles[today];
-      const todayJournal = todayFile ? extractJournalFromContent(todayFile.content).journal : '';
+      const days = getJournalDays();
 
-      // After save, _journalJustSaved is true — show today in the list, leave textarea clear.
-      // On normal load, pre-fill today's journal into the textarea for editing.
-      if (renderJournal._justSaved) {
-        renderJournal._justSaved = false;
-        journalNewEntry.value = '';
-      } else if (todayJournal) {
-        journalNewEntry.value = todayJournal;
-      } else {
-        journalNewEntry.value = '';
-      }
-
-      const entries = getJournalEntries();
-      const textareaHasToday = journalNewEntry.value.trim() === todayJournal.trim() && todayJournal;
-      const displayEntries = textareaHasToday ? entries.filter(e => e.dateStr !== today) : entries;
-
-      if (displayEntries.length === 0 && !journalNewEntry.value) {
+      if (days.length === 0) {
         journalEntries.innerHTML = '<div class="empty-state"><p style="color: var(--text-muted); font-size: 15px;">No journal entries yet. Write something above to get started.</p></div>';
         return;
       }
 
       let html = '';
-      for (const entry of displayEntries) {
-        html += `<div class="journal-entry">`;
-        html += `<div class="journal-entry-date">${formatDateDisplay(entry.dateStr)}</div>`;
-        if (entry.journal) {
-          html += `<div class="journal-entry-body">${renderMarkdown(entry.journal)}</div>`;
+      for (const day of days) {
+        html += `<div class="journal-entry" data-date="${escapeHtml(day.dateStr)}">`;
+        html += `<div class="journal-entry-header">`;
+        html += `<div class="journal-entry-date">${formatDateDisplay(day.dateStr)}</div>`;
+        html += `</div>`;
+
+        // Render each sub-entry (timestamped or legacy)
+        if (day.entries.length > 0) {
+          for (let i = 0; i < day.entries.length; i++) {
+            const entry = day.entries[i];
+            html += `<div class="journal-sub-entry${entry.legacy ? ' legacy' : ''}" data-entry-index="${i}">`;
+            if (entry.time) {
+              html += `<div class="journal-entry-header">`;
+              html += `<div class="journal-entry-time">${escapeHtml(entry.time)}</div>`;
+              html += `<div class="journal-entry-actions">`;
+              html += `<button class="journal-entry-action-btn journal-edit-btn" data-date="${escapeHtml(day.dateStr)}" data-index="${i}" title="Edit entry">✎</button>`;
+              html += `</div>`;
+              html += `</div>`;
+            } else {
+              // Legacy entry — float edit button over top-right of body
+              html += `<div class="journal-entry-actions legacy-actions">`;
+              html += `<button class="journal-entry-action-btn journal-edit-btn" data-date="${escapeHtml(day.dateStr)}" data-index="${i}" title="Edit entry">✎</button>`;
+              html += `</div>`;
+            }
+            html += `<div class="journal-entry-body">${renderMarkdown(entry.text)}</div>`;
+            html += `</div>`;
+          }
         }
-        if (entry.observations) {
+
+        if (day.observations) {
           html += `<div class="journal-entry-observations">`;
           html += `<div class="journal-entry-observations-label">Observations</div>`;
-          html += `<div class="journal-entry-body">${renderMarkdown(entry.observations)}</div>`;
+          html += `<div class="journal-entry-body">${renderMarkdown(day.observations)}</div>`;
           html += `</div>`;
         }
+
         html += `</div>`;
       }
       journalEntries.innerHTML = html;
+
+      // Attach inline edit handlers
+      journalEntries.querySelectorAll('.journal-edit-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const dateStr = btn.dataset.date;
+          const index = parseInt(btn.dataset.index, 10);
+          startInlineEdit(dateStr, index);
+        });
+      });
     }
 
-    // Save journal entry — writes to today's daily note
+    // Inline edit: replace rendered entry with a textarea
+    function startInlineEdit(dateStr, entryIndex) {
+      const { journal } = extractSectionsFromContent(dailyFiles[dateStr].content);
+      const entries = parseJournalEntries(journal);
+      const entry = entries[entryIndex];
+      if (!entry) return;
+
+      // Find the right sub-entry within the correct date card
+      const card = journalEntries.querySelector(`.journal-entry[data-date="${dateStr}"]`);
+      if (!card) return;
+      const target = card.querySelector(`.journal-sub-entry[data-entry-index="${entryIndex}"]`);
+      if (!target) return;
+
+      // Replace body with textarea
+      const bodyEl = target.querySelector('.journal-entry-body');
+      const actionsEl = target.querySelector('.journal-entry-actions');
+      if (!bodyEl) return;
+
+      // Hide actions while editing
+      if (actionsEl) actionsEl.style.display = 'none';
+
+      const originalHtml = bodyEl.innerHTML;
+      const textarea = document.createElement('textarea');
+      textarea.className = 'journal-entry-edit-area';
+      textarea.value = entry.text;
+      textarea.rows = Math.max(3, entry.text.split('\n').length + 1);
+
+      const footer = document.createElement('div');
+      footer.className = 'journal-entry-edit-footer';
+      footer.innerHTML = `<button class="cancel-edit">Cancel</button><button class="primary save-edit">Save</button>`;
+
+      bodyEl.replaceWith(textarea);
+      textarea.after(footer);
+      textarea.focus();
+
+      footer.querySelector('.cancel-edit').addEventListener('click', () => {
+        // Restore original rendered content
+        footer.remove();
+        const newBody = document.createElement('div');
+        newBody.className = 'journal-entry-body';
+        newBody.innerHTML = originalHtml;
+        textarea.replaceWith(newBody);
+        if (actionsEl) actionsEl.style.display = '';
+      });
+
+      footer.querySelector('.save-edit').addEventListener('click', async () => {
+        const newText = textarea.value.trim();
+        if (!newText) return;
+
+        // Update the entry in place
+        entries[entryIndex] = { ...entry, text: newText };
+        const newJournalText = serializeJournalEntries(entries);
+        await writeJournalSection(dateStr, newJournalText);
+
+        showStatus('Entry updated');
+        renderJournal();
+      });
+    }
+
+    // Save: append a new timestamped entry to today's journal
     journalSaveBtn.addEventListener('click', async () => {
       if (!VaultIO.connected) return;
+      const newText = journalNewEntry.value.trim();
+      if (!newText) return;
 
       const today = getTodayStr();
-      const newJournal = journalNewEntry.value.trim();
+      const timestamp = formatTimeNow();
+      const newEntry = `**${timestamp}** — ${newText}`;
 
-      // Ensure the daily file exists
       if (!dailyFiles[today]) {
-        // Create a new daily note with the template
-        const template = `# Daily Notes\n\n- Personal\n\t- [ ] \n- Work\n\t- [ ] \n\n## Journal\n\n${newJournal}\n\n## Observations\n`;
+        // Create a new daily note
+        const template = `# Daily Notes\n\n## Tasks\n- Personal\n\t- [ ] \n- Work\n\t- [ ] \n\n## Journal\n\n${newEntry}\n\n## Observations\n`;
         await VaultIO.writeDailyFile(today, template);
         dailyFiles[today] = { content: template, lastModified: Date.now() };
       } else {
-        // Update the existing daily note's journal section
-        const content = dailyFiles[today].content;
-        const lines = content.split('\n');
-        let journalStart = -1;
-        let journalEnd = -1;
-
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].match(/^## Journal\s*$/)) {
-            journalStart = i + 1;
-          } else if (journalStart >= 0 && journalEnd === -1 && lines[i].match(/^## /)) {
-            journalEnd = i;
-          }
-        }
-
-        if (journalStart === -1) {
-          // No journal section exists — append one before ## Observations or at end
-          let insertAt = lines.length;
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].match(/^## Observations\s*$/)) { insertAt = i; break; }
-          }
-          lines.splice(insertAt, 0, '## Journal', '', newJournal, '');
-        } else {
-          // Replace content between ## Journal and next ##
-          if (journalEnd === -1) journalEnd = lines.length;
-          const before = lines.slice(0, journalStart);
-          const after = lines.slice(journalEnd);
-          lines.length = 0;
-          lines.push(...before, '', newJournal, '', ...after);
-        }
-
-        const newContent = lines.join('\n');
-        const mtime = await VaultIO.writeDailyFile(today, newContent);
-        dailyFiles[today].content = newContent;
-        dailyFiles[today].lastModified = mtime || Date.now();
+        // Append to existing journal section
+        const { journal } = extractSectionsFromContent(dailyFiles[today].content);
+        const updatedJournal = journal ? `${journal}\n\n${newEntry}` : newEntry;
+        await writeJournalSection(today, updatedJournal);
       }
 
       showStatus('Journal entry saved');
-
-      // Flag that we just saved, then re-render — this clears the textarea
-      // and shows today's entry in the list below as confirmation
-      renderJournal._justSaved = true;
       renderJournal();
     });
 
