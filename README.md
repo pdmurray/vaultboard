@@ -2,7 +2,7 @@
 
 A task dashboard for [Obsidian](https://obsidian.md) daily notes — kanban board and chronological list views. Open `dashboard.html` directly in your browser, or self-host as a Docker container for access from any device.
 
-![Board and list views](https://img.shields.io/badge/views-board%20%7C%20list-D97757?style=flat-square) ![Self-hostable](https://img.shields.io/badge/self--host-Docker-blue?style=flat-square) ![Single file](https://img.shields.io/badge/local-single%20HTML-green?style=flat-square)
+![Board and list views](https://img.shields.io/badge/views-board%20%7C%20list-7c3aed?style=flat-square) ![Self-hostable](https://img.shields.io/badge/self--host-Docker-blue?style=flat-square) ![Single file](https://img.shields.io/badge/local-single%20HTML-green?style=flat-square)
 
 ## Background
 

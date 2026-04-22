@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Productivity</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='2' width='24' height='28' rx='4' fill='%23faf9f5' stroke='%23D97757' stroke-width='2'/%3E%3Crect x='8' y='0' width='16' height='5' rx='2.5' fill='%23D97757'/%3E%3Cpath d='M9 13l3 3 5-5' fill='none' stroke='%23D97757' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='20' y='12' width='5' height='2' rx='1' fill='%23c4c4c2'/%3E%3Crect x='9' y='20' width='10' height='2' rx='1' fill='%23c4c4c2'/%3E%3Crect x='9' y='25' width='7' height='2' rx='1' fill='%23c4c4c2'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='2' width='24' height='28' rx='4' fill='%231e1e1e' stroke='%237c3aed' stroke-width='2'/%3E%3Crect x='8' y='0' width='16' height='5' rx='2.5' fill='%237c3aed'/%3E%3Cpath d='M9 13l3 3 5-5' fill='none' stroke='%23a78bfa' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='20' y='12' width='5' height='2' rx='1' fill='%23666666'/%3E%3Crect x='9' y='20' width='10' height='2' rx='1' fill='%23666666'/%3E%3Crect x='9' y='25' width='7' height='2' rx='1' fill='%23666666'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -13,18 +13,18 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg-primary: #faf9f5;
-      --bg-secondary: #F5F4EF;
+      --bg-primary: #f6f6f6;
+      --bg-secondary: #efefef;
       --bg-card: #ffffff;
-      --text-primary: #141413;
-      --text-secondary: #5c5c5a;
-      --text-muted: #8c8c8a;
-      --accent: #D97757;
-      --accent-hover: #c4684a;
-      --border: #e5e4df;
-      --border-light: #eeeee9;
-      --shadow: rgba(20, 20, 19, 0.04);
-      --shadow-hover: rgba(20, 20, 19, 0.08);
+      --text-primary: #1a1a1a;
+      --text-secondary: #555555;
+      --text-muted: #888888;
+      --accent: #7c3aed;
+      --accent-hover: #6d28d9;
+      --border: #e0e0e0;
+      --border-light: #eaeaea;
+      --shadow: rgba(0, 0, 0, 0.04);
+      --shadow-hover: rgba(0, 0, 0, 0.08);
       --badge-personal-bg: #EDE9FE;
       --badge-personal-text: #7C3AED;
       --badge-work-bg: #DBEAFE;
@@ -36,50 +36,50 @@
     }
 
     [data-theme="dark"] {
-      --bg-primary: #1a1a1e;
-      --bg-secondary: #232328;
-      --bg-card: #2a2a30;
-      --text-primary: #e4e4e7;
-      --text-secondary: #a1a1a6;
-      --text-muted: #71717a;
-      --accent: #E08A6D;
-      --accent-hover: #D97757;
-      --border: #3f3f46;
-      --border-light: #333338;
-      --shadow: rgba(0, 0, 0, 0.15);
-      --shadow-hover: rgba(0, 0, 0, 0.25);
+      --bg-primary: #1e1e1e;
+      --bg-secondary: #262626;
+      --bg-card: #2b2b2b;
+      --text-primary: #dcddde;
+      --text-secondary: #999999;
+      --text-muted: #666666;
+      --accent: #a78bfa;
+      --accent-hover: #8b5cf6;
+      --border: #363636;
+      --border-light: #303030;
+      --shadow: rgba(0, 0, 0, 0.2);
+      --shadow-hover: rgba(0, 0, 0, 0.3);
       --badge-personal-bg: #2e1f54;
       --badge-personal-text: #c4b5fd;
       --badge-work-bg: #1e2d4a;
       --badge-work-text: #93c5fd;
       --badge-waiting-bg: #3d2f0a;
       --badge-waiting-text: #fcd34d;
-      --badge-someday-bg: #2a2a30;
-      --badge-someday-text: #a1a1a6;
+      --badge-someday-bg: #2b2b2b;
+      --badge-someday-text: #999999;
     }
 
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg-primary: #1a1a1e;
-        --bg-secondary: #232328;
-        --bg-card: #2a2a30;
-        --text-primary: #e4e4e7;
-        --text-secondary: #a1a1a6;
-        --text-muted: #71717a;
-        --accent: #E08A6D;
-        --accent-hover: #D97757;
-        --border: #3f3f46;
-        --border-light: #333338;
-        --shadow: rgba(0, 0, 0, 0.15);
-        --shadow-hover: rgba(0, 0, 0, 0.25);
+        --bg-primary: #1e1e1e;
+        --bg-secondary: #262626;
+        --bg-card: #2b2b2b;
+        --text-primary: #dcddde;
+        --text-secondary: #999999;
+        --text-muted: #666666;
+        --accent: #a78bfa;
+        --accent-hover: #8b5cf6;
+        --border: #363636;
+        --border-light: #303030;
+        --shadow: rgba(0, 0, 0, 0.2);
+        --shadow-hover: rgba(0, 0, 0, 0.3);
         --badge-personal-bg: #2e1f54;
         --badge-personal-text: #c4b5fd;
         --badge-work-bg: #1e2d4a;
         --badge-work-text: #93c5fd;
         --badge-waiting-bg: #3d2f0a;
         --badge-waiting-text: #fcd34d;
-        --badge-someday-bg: #2a2a30;
-        --badge-someday-text: #a1a1a6;
+        --badge-someday-bg: #2b2b2b;
+        --badge-someday-text: #999999;
       }
     }
 
