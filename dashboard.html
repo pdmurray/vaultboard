@@ -2630,6 +2630,73 @@
         card.classList.remove('dragging');
       });
 
+      // Touch drag-and-drop (long-press to initiate)
+      let touchDragTimer = null;
+      let touchDragActive = false;
+      let touchStartX = 0, touchStartY = 0;
+      let touchDropTarget = null;
+
+      card.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        const t = e.touches[0];
+        touchStartX = t.clientX;
+        touchStartY = t.clientY;
+        touchDragActive = false;
+        touchDropTarget = null;
+        if (touchDragTimer) clearTimeout(touchDragTimer);
+        touchDragTimer = setTimeout(() => {
+          touchDragActive = true;
+          card.classList.add('dragging');
+          if (navigator.vibrate) navigator.vibrate(15);
+        }, 400);
+      }, { passive: true });
+
+      card.addEventListener('touchmove', (e) => {
+        if (!e.touches[0]) return;
+        const t = e.touches[0];
+        if (!touchDragActive) {
+          const dx = t.clientX - touchStartX;
+          const dy = t.clientY - touchStartY;
+          if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+            if (touchDragTimer) {
+              clearTimeout(touchDragTimer);
+              touchDragTimer = null;
+            }
+          }
+          return;
+        }
+        e.preventDefault();
+        card.style.pointerEvents = 'none';
+        const elBelow = document.elementFromPoint(t.clientX, t.clientY);
+        card.style.pointerEvents = '';
+        const cardsContainer = elBelow ? elBelow.closest('.cards') : null;
+        if (touchDropTarget !== cardsContainer) {
+          document.querySelectorAll('.cards.drag-over').forEach(el => el.classList.remove('drag-over'));
+          if (cardsContainer) cardsContainer.classList.add('drag-over');
+          touchDropTarget = cardsContainer;
+        }
+      }, { passive: false });
+
+      const endTouchDrag = (e) => {
+        if (touchDragTimer) {
+          clearTimeout(touchDragTimer);
+          touchDragTimer = null;
+        }
+        if (!touchDragActive) return;
+        card.classList.remove('dragging');
+        document.querySelectorAll('.cards.drag-over').forEach(el => el.classList.remove('drag-over'));
+        if (touchDropTarget) {
+          const colId = touchDropTarget.dataset.column;
+          if (colId) moveTaskToColumn(task.id, colId);
+        }
+        touchDragActive = false;
+        touchDropTarget = null;
+        if (e && e.cancelable) e.preventDefault();
+      };
+
+      card.addEventListener('touchend', endTouchDrag, { passive: false });
+      card.addEventListener('touchcancel', endTouchDrag);
+
       card.addEventListener('click', (e) => {
         const action = e.target.dataset.action;
         if (action === 'toggle') {
