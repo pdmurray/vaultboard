@@ -1701,6 +1701,45 @@
       .task-card {
         padding: 12px 14px;
       }
+
+      .task-card .card-title {
+        font-size: 14px;
+      }
+
+      .task-card .card-title.checked {
+        font-size: 14px;
+      }
+
+      .task-category {
+        font-size: 9px;
+        padding: 1px 5px;
+      }
+
+      .task-date-badge {
+        font-size: 9px;
+        padding: 1px 5px;
+      }
+
+      .task-card .delete-btn {
+        display: block;
+        top: 6px;
+        right: 6px;
+        font-size: 16px;
+        padding: 4px 8px;
+        opacity: 0.5;
+      }
+
+      .task-card .delete-btn:hover {
+        opacity: 1;
+      }
+
+      .list-item-title {
+        font-size: 14px;
+      }
+
+      .list-item-content {
+        gap: 2px;
+      }
     }
 
     .task-category {
@@ -2554,14 +2593,12 @@
       }
 
       let html = `
+        <button class="delete-btn" data-action="delete" title="Delete task">&times;</button>
         <div style="display: flex; align-items: flex-start; gap: 12px;">
-          <button class="delete-btn" data-action="delete" title="Delete task">&times;</button>
           <span class="checkbox ${task.checked ? 'checked' : ''}" data-action="toggle"></span>
           <div style="flex: 1; min-width: 0;">
             <div class="card-title ${task.checked ? 'checked' : ''}" data-action="edit-title">${task.title}</div>
-          </div>
-          <div style="display: flex; gap: 4px; align-items: center; flex-shrink: 0;">
-            ${metaHtml}
+            <div style="display: flex; gap: 4px; align-items: center; margin-top: 4px; flex-wrap: wrap;">${metaHtml}</div>
           </div>
         </div>
       `;
@@ -3104,32 +3141,32 @@
         startEditingListItem(title, task);
       });
 
+      titleRow.appendChild(title);
+      content.appendChild(titleRow);
+
+      const badgeRow = document.createElement('div');
+      badgeRow.style.cssText = 'display: flex; gap: 4px; align-items: center; margin-top: 4px; flex-wrap: wrap;';
+
       const catBadge = document.createElement('span');
       catBadge.className = `task-category ${task.category === 'Work' ? 'work' : 'personal'}`;
       catBadge.textContent = task.category;
+      badgeRow.appendChild(catBadge);
 
       if (task.status === 'waiting') {
         const statusBadge = document.createElement('span');
         statusBadge.className = 'task-category';
         statusBadge.style.cssText = 'background: var(--badge-waiting-bg); color: var(--badge-waiting-text);';
         statusBadge.textContent = 'Waiting';
-        titleRow.appendChild(title);
-        titleRow.appendChild(statusBadge);
-        titleRow.appendChild(catBadge);
+        badgeRow.appendChild(statusBadge);
       } else if (task.status === 'someday') {
         const statusBadge = document.createElement('span');
         statusBadge.className = 'task-category';
         statusBadge.style.cssText = 'background: var(--badge-someday-bg); color: var(--badge-someday-text);';
         statusBadge.textContent = 'Someday';
-        titleRow.appendChild(title);
-        titleRow.appendChild(statusBadge);
-        titleRow.appendChild(catBadge);
-      } else {
-        titleRow.appendChild(title);
-        titleRow.appendChild(catBadge);
+        badgeRow.appendChild(statusBadge);
       }
 
-      content.appendChild(titleRow);
+      content.appendChild(badgeRow);
 
       // Subtasks
       if (task.subtasks && task.subtasks.length > 0) {
